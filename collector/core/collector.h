@@ -1,5 +1,8 @@
 #pragma once
 
+#include <string>
+#include <vector>
+
 struct Evidence {
     std::string source;
     std::string timestamp;
