@@ -4,5 +4,5 @@
 
 class EventLogCollector : public Collector {
    public:
-    bool collect() override;
+    std::vector<Evidence> collect() override;
 };

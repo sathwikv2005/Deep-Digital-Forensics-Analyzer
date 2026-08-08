@@ -4,11 +4,14 @@
 #include <winevt.h>
 
 #include <iostream>
+#include <string>
 #include <vector>
 
 #pragma comment(lib, "wevtapi.lib")
 
-bool EventLogCollector::collect() {
+std::vector<Evidence> EventLogCollector::collect() {
+    std::vector<Evidence> evidence;
+
     const wchar_t* channel = L"System";
 
     EVT_HANDLE query = EvtQuery(nullptr, channel, L"*",
@@ -16,7 +19,7 @@ bool EventLogCollector::collect() {
 
     if (!query) {
         std::cerr << "EvtQuery failed: " << GetLastError() << '\n';
-        return false;
+        return evidence;
     }
 
     EVT_HANDLE events[16];
@@ -39,7 +42,16 @@ bool EventLogCollector::collect() {
 
             if (EvtRender(nullptr, events[i], EvtRenderEventXml, bufferUsed,
                           buffer.data(), &bufferUsed, &propertyCount)) {
-                std::wcout << buffer.data() << L"\n\n";
+                std::wstring xml(buffer.data());
+
+                Evidence item;
+
+                item.source = "Windows Event Log";
+                item.category = "System";
+                item.timestamp = "";
+                item.description = std::string(xml.begin(), xml.end());
+
+                evidence.push_back(std::move(item));
             }
 
             EvtClose(events[i]);
@@ -47,5 +59,6 @@ bool EventLogCollector::collect() {
     }
 
     EvtClose(query);
-    return true;
+
+    return evidence;
 }
