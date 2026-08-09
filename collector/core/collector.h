@@ -3,14 +3,7 @@
 #include <string>
 #include <vector>
 
-struct Evidence {
-    std::string source;
-    std::string timestamp;
-    std::string category;
-    std::string description;
-    std::string raw;
-};
-
+#include "../models/evidence.h"
 class Collector {
    public:
     virtual ~Collector() = default;

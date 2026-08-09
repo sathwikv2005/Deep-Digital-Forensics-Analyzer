@@ -7,3 +7,9 @@
 
 # venv
 .venv
+
+# vscode
+.vscode
+
+# collector output
+collector/output/*
