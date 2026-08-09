@@ -14,6 +14,9 @@ file(GLOB_RECURSE SOURCES
 
 add_executable(collector ${SOURCES})
 
-target_include_directories(collector PRIVATE .)
+target_include_directories(collector PRIVATE
+    .
+    include
+)
 
 target_link_libraries(collector PRIVATE wevtapi)
