@@ -1,7 +1,7 @@
 #include <iostream>
 #include <vector>
 
-#include "collectors/EventLogCollector.h"
+#include "collectors/eventLogCollector.h"
 
 int main() {
     EventLogCollector eventCollector;
@@ -15,6 +15,7 @@ int main() {
         std::cout << "Timestamp: " << event.timestamp << '\n';
         std::cout << "Category: " << event.category << '\n';
         std::cout << "Description:\n" << event.description << '\n';
+        std::cout << "Raw:\n" << event.raw << '\n';
         std::cout << "----------------------------------------\n";
     }
 
