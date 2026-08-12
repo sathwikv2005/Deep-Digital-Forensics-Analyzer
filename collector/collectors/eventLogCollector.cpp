@@ -9,6 +9,22 @@
 
 #pragma comment(lib, "wevtapi.lib")
 
+std::string extractTimestamp(const std::wstring& xml) {
+    const std::wstring prefix = L"<TimeCreated SystemTime='";
+
+    size_t start = xml.find(prefix);
+
+    if (start == std::wstring::npos) return "";
+
+    start += prefix.length();
+
+    size_t end = xml.find(L"'", start);
+
+    if (end == std::wstring::npos) return "";
+
+    return std::string(xml.begin() + start, xml.begin() + end);
+}
+
 std::vector<Evidence> EventLogCollector::collect() {
     std::vector<Evidence> evidence;
 
@@ -47,7 +63,7 @@ std::vector<Evidence> EventLogCollector::collect() {
                 Evidence item;
 
                 item.source = "Windows Event Log";
-                item.timestamp = "";
+                item.timestamp = extractTimestamp(xml);
                 item.category = "System";
                 item.description = "Windows System event";
                 item.raw = std::string(xml.begin(), xml.end());
