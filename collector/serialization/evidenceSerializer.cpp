@@ -25,13 +25,20 @@ bool EvidenceSerializer::write(const std::string& path,
         std::filesystem::create_directories(filePath.parent_path());
     }
 
-    std::ofstream file(filePath);
+    std::ofstream file(filePath, std::ios::out | std::ios::trunc);
 
     if (!file.is_open()) {
         return false;
     }
 
     file << output.dump(4);
+
+    if (file.fail()) {
+        file.close();
+        return false;
+    }
+
+    file.close();
 
     return true;
 }
