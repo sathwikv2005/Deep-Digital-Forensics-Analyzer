@@ -11,5 +11,5 @@
 # vscode
 .vscode
 
-# collector output
-collector/output/*
+# outputs
+output/*

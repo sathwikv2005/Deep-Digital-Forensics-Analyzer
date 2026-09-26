@@ -5,6 +5,8 @@
 #include "collectors/networkCollector.h"
 #include "serialization/evidenceSerializer.h"
 
+#define OUTPUT_DIR "../output/collector_output"
+
 int main() {
     EventLogCollector eventCollector;
     BrowserCollector browserCollector;
@@ -20,18 +22,19 @@ int main() {
 
     std::cout << "Collected " << networkEvidence.size() << " network events\n";
 
-    if (!EvidenceSerializer::write("output/event_logs.json", eventEvidence)) {
+    if (!EvidenceSerializer::write(OUTPUT_DIR "/event_logs.json",
+                                   eventEvidence)) {
         std::cerr << "Failed to write event logs\n";
         return 1;
     }
 
-    if (!EvidenceSerializer::write("output/browser_history.json",
+    if (!EvidenceSerializer::write(OUTPUT_DIR "/browser_history.json",
                                    browserEvidence)) {
         std::cerr << "Failed to write browser history\n";
         return 1;
     }
 
-    if (!EvidenceSerializer::write("output/network_connections.json",
+    if (!EvidenceSerializer::write(OUTPUT_DIR "/network_connections.json",
                                    networkEvidence)) {
         std::cerr << "Failed to write network connections\n";
         return 1;
