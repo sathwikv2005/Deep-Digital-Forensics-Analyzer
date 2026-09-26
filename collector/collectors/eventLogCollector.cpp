@@ -9,21 +9,31 @@
 
 #pragma comment(lib, "wevtapi.lib")
 
+namespace {
+
 std::string extractTimestamp(const std::wstring& xml) {
     const std::wstring prefix = L"<TimeCreated SystemTime='";
 
     size_t start = xml.find(prefix);
 
-    if (start == std::wstring::npos) return "";
+    if (start == std::wstring::npos) {
+        return "";
+    }
 
     start += prefix.length();
 
     size_t end = xml.find(L"'", start);
 
-    if (end == std::wstring::npos) return "";
+    if (end == std::wstring::npos) {
+        return "";
+    }
 
-    return std::string(xml.begin() + start, xml.begin() + end);
+    std::wstring timestamp = xml.substr(start, end - start);
+
+    return std::string(timestamp.begin(), timestamp.end());
 }
+
+}  // namespace
 
 std::vector<Evidence> EventLogCollector::collect() {
     std::vector<Evidence> evidence;
@@ -35,14 +45,16 @@ std::vector<Evidence> EventLogCollector::collect() {
 
     if (!query) {
         std::cerr << "EvtQuery failed: " << GetLastError() << '\n';
+
         return evidence;
     }
 
     EVT_HANDLE events[16];
+
     DWORD returned = 0;
 
     while (EvtNext(query, 16, events, INFINITE, 0, &returned)) {
-        for (DWORD i = 0; i < returned; i++) {
+        for (DWORD i = 0; i < returned; ++i) {
             DWORD bufferUsed = 0;
             DWORD propertyCount = 0;
 
@@ -60,14 +72,23 @@ std::vector<Evidence> EventLogCollector::collect() {
                           buffer.data(), &bufferUsed, &propertyCount)) {
                 std::wstring xml(buffer.data());
 
+                EventLogEvidence eventData;
+
+                eventData.channel = "System";
+
                 Evidence item;
 
                 item.id = "event-" + std::to_string(evidence.size() + 1);
+
                 item.source = "Windows Event Log";
+
                 item.timestamp = extractTimestamp(xml);
-                item.category = "System";
+
                 item.description = "Windows System event";
+
                 item.raw = std::string(xml.begin(), xml.end());
+
+                item.data = std::move(eventData);
 
                 evidence.push_back(std::move(item));
             }

@@ -9,6 +9,9 @@
 #include <string>
 #include <vector>
 
+#pragma comment(lib, "iphlpapi.lib")
+#pragma comment(lib, "Ws2_32.lib")
+
 namespace {
 
 std::string getProcessName(DWORD pid) {
@@ -19,6 +22,7 @@ std::string getProcessName(DWORD pid) {
     }
 
     wchar_t path[MAX_PATH];
+
     DWORD size = MAX_PATH;
 
     std::string result = "Unknown";
@@ -47,7 +51,9 @@ std::string ipToString(DWORD address) {
 
     char buffer[INET_ADDRSTRLEN]{};
 
-    inet_ntop(AF_INET, &addr, buffer, sizeof(buffer));
+    if (!inet_ntop(AF_INET, &addr, buffer, sizeof(buffer))) {
+        return "";
+    }
 
     return buffer;
 }
@@ -96,7 +102,8 @@ std::string tcpStateToString(DWORD state) {
 }
 
 std::string currentTimestamp() {
-    SYSTEMTIME time;
+    SYSTEMTIME time{};
+
     GetSystemTime(&time);
 
     char buffer[64];
@@ -144,22 +151,39 @@ std::vector<Evidence> NetworkCollector::collect() {
 
         std::string remoteIp = ipToString(connection.dwRemoteAddr);
 
-        unsigned short localPort =
+        uint16_t localPort =
             ntohs(static_cast<u_short>(connection.dwLocalPort));
 
-        unsigned short remotePort =
+        uint16_t remotePort =
             ntohs(static_cast<u_short>(connection.dwRemotePort));
 
         std::string state = tcpStateToString(connection.dwState);
 
         std::string process = getProcessName(connection.dwOwningPid);
 
+        NetworkConnectionEvidence networkData;
+
+        networkData.processId = connection.dwOwningPid;
+
+        networkData.processName = process;
+
+        networkData.localIp = localIp;
+
+        networkData.localPort = localPort;
+
+        networkData.remoteIp = remoteIp;
+
+        networkData.remotePort = remotePort;
+
+        networkData.state = state;
+
         Evidence item;
 
         item.id = "network-" + std::to_string(evidence.size() + 1);
+
         item.source = "Windows Network";
+
         item.timestamp = currentTimestamp();
-        item.category = "Network Connection";
 
         item.description =
             process + " (" + std::to_string(connection.dwOwningPid) + ") " +
@@ -170,6 +194,8 @@ std::vector<Evidence> NetworkCollector::collect() {
                    "; process=" + process + "; local=" + localIp + ":" +
                    std::to_string(localPort) + "; remote=" + remoteIp + ":" +
                    std::to_string(remotePort) + "; state=" + state;
+
+        item.data = std::move(networkData);
 
         evidence.push_back(std::move(item));
     }
