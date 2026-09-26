@@ -9,6 +9,7 @@
 #include "correlation.h"
 #include "correlationRule.h"
 #include "evidenceNode.h"
+#include "indicatorExtractor.h"
 
 class CorrelationEngine {
    public:
@@ -18,12 +19,16 @@ class CorrelationEngine {
 
    private:
     std::vector<EvidenceNode> events;
+    std::vector<Indicators> indicators;
 
     std::unordered_map<std::string, std::vector<size_t>> domainIndex;
     std::unordered_map<std::string, std::vector<size_t>> ipIndex;
     std::unordered_map<std::string, std::vector<size_t>> fileIndex;
     std::unordered_map<std::string, std::vector<size_t>> processIndex;
 
+    std::vector<std::unique_ptr<CorrelationRule>> rules;
+
+    void filterToRecentEvents();
     void buildIndexes();
 
     void addToIndex(std::unordered_map<std::string, std::vector<size_t>>& index,
@@ -31,7 +36,9 @@ class CorrelationEngine {
 
     std::vector<Correlation> runRules();
 
-    std::vector<std::unique_ptr<CorrelationRule>> rules;
+    void processIndicatorIndex(
+        const std::unordered_map<std::string, std::vector<size_t>>& index,
+        const std::string& indicatorType, std::vector<Correlation>& results);
 };
 
 #endif
