@@ -13,8 +13,8 @@ struct TimelineEvent {
     std::string category;
     nlohmann::json data;
 
-    int64_t timestampMs;
-    bool validTimestamp;
+    int64_t timestampMs = -1;
+    bool validTimestamp = false;
 };
 
 class TimelineConstructor {
@@ -24,5 +24,6 @@ class TimelineConstructor {
 
    private:
     TimelineEvent createEvent(const nlohmann::json& item);
+    std::string getCategory(const nlohmann::json& data);
     int64_t parseTimestamp(const std::string& timestamp);
 };

@@ -1,7 +1,6 @@
 #include "timelineConstructor.h"
 
 #include <algorithm>
-#include <chrono>
 #include <iomanip>
 #include <sstream>
 
@@ -11,7 +10,7 @@ TimelineEvent TimelineConstructor::createEvent(const nlohmann::json& item) {
     event.id = item.value("id", "");
     event.timestamp = item.value("timestamp", "");
     event.source = item.value("source", "");
-    event.category = item.value("category", "");
+    event.category = item.value("type", "Unknown");
     event.data = item;
 
     event.timestampMs = parseTimestamp(event.timestamp);
@@ -25,7 +24,9 @@ int64_t TimelineConstructor::parseTimestamp(const std::string& timestamp) {
 
     std::string value = timestamp;
 
-    if (!value.empty() && value.back() == 'Z') value.pop_back();
+    if (!value.empty() && value.back() == 'Z') {
+        value.pop_back();
+    }
 
     auto dot = value.find('.');
 
@@ -54,9 +55,13 @@ int64_t TimelineConstructor::parseTimestamp(const std::string& timestamp) {
     int64_t milliseconds = static_cast<int64_t>(time) * 1000;
 
     if (!fractional.empty()) {
-        while (fractional.size() < 3) fractional += '0';
+        while (fractional.size() < 3) {
+            fractional += '0';
+        }
 
-        if (fractional.size() > 3) fractional.resize(3);
+        if (fractional.size() > 3) {
+            fractional.resize(3);
+        }
 
         milliseconds += std::stoll(fractional);
     }
@@ -69,7 +74,9 @@ std::vector<TimelineEvent> TimelineConstructor::construct(
     std::vector<TimelineEvent> timeline;
     timeline.reserve(evidence.size());
 
-    for (const auto& item : evidence) timeline.push_back(createEvent(item));
+    for (const auto& item : evidence) {
+        timeline.push_back(createEvent(item));
+    }
 
     std::stable_sort(timeline.begin(), timeline.end(),
                      [](const TimelineEvent& a, const TimelineEvent& b) {
