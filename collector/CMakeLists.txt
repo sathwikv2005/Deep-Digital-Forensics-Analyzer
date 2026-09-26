@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 
-project(Collector LANGUAGES CXX)
+project(Collector LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -14,11 +14,19 @@ file(GLOB_RECURSE SOURCES
 
 list(FILTER SOURCES EXCLUDE REGEX ".*/build/.*")
 
-add_executable(collector ${SOURCES})
+add_executable(collector
+    ${SOURCES}
+    include/sqlite/sqlite3.c
+)
 
 target_include_directories(collector PRIVATE
     .
     include
+    include/sqlite
 )
 
-target_link_libraries(collector PRIVATE wevtapi)
+target_link_libraries(collector PRIVATE
+    wevtapi
+    iphlpapi
+    ws2_32
+)
