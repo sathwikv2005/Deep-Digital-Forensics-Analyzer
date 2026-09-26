@@ -12,6 +12,18 @@ TimelineEvent TimelineConstructor::createEvent(const nlohmann::json& item) {
     event.source = item.value("source", "");
     event.category = item.value("type", "Unknown");
 
+    if (event.category == "Unknown") {
+        if (event.source == "Windows Network") {
+            event.category = "NetworkConnection";
+        } else if (event.source == "Windows Process") {
+            event.category = "Process";
+        } else if (event.source == "Windows Event Log") {
+            event.category = "EventLog";
+        } else if (event.source == "Chrome Browser") {
+            event.category = "BrowserHistory";
+        }
+    }
+
     event.data = item;
 
     event.timestampMs = parseTimestamp(event.timestamp);
