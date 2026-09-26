@@ -185,6 +185,7 @@ std::vector<Evidence> EventLogCollector::collect() {
             data.computer = computer;
 
             Evidence item;
+            item.type = EvidenceType::EventLog;
 
             item.id = "event-" + std::to_string(evidence.size() + 1);
 

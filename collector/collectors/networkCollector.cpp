@@ -287,6 +287,7 @@ void collectIPv6(std::vector<Evidence>& evidence) {
         data.state = state;
 
         Evidence item;
+        item.type = EvidenceType::NetworkConnection;
 
         item.id = "network-" + std::to_string(evidence.size() + 1);
 

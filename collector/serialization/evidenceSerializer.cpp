@@ -2,7 +2,6 @@
 
 #include <filesystem>
 #include <fstream>
-#include <type_traits>
 
 #include "nlohmann/json.hpp"
 
@@ -10,20 +9,25 @@ using json = nlohmann::json;
 
 namespace {
 
-template <typename T>
-std::string evidenceType() {
-    if constexpr (std::is_same_v<T, BrowserHistoryEvidence>) {
-        return "BrowserHistory";
-    } else if constexpr (std::is_same_v<T, BrowserDownloadEvidence>) {
-        return "BrowserDownload";
-    } else if constexpr (std::is_same_v<T, ProcessEvidence>) {
-        return "Process";
-    } else if constexpr (std::is_same_v<T, NetworkConnectionEvidence>) {
-        return "NetworkConnection";
-    } else if constexpr (std::is_same_v<T, FileEvidence>) {
-        return "File";
-    } else if constexpr (std::is_same_v<T, EventLogEvidence>) {
-        return "EventLog";
+std::string evidenceTypeToString(EvidenceType type) {
+    switch (type) {
+        case EvidenceType::BrowserHistory:
+            return "BrowserHistory";
+
+        case EvidenceType::BrowserDownload:
+            return "BrowserDownload";
+
+        case EvidenceType::Process:
+            return "Process";
+
+        case EvidenceType::NetworkConnection:
+            return "NetworkConnection";
+
+        case EvidenceType::File:
+            return "File";
+
+        case EvidenceType::EventLog:
+            return "EventLog";
     }
 
     return "Unknown";
@@ -88,14 +92,6 @@ json serializeEvidenceData(const EvidenceData& data) {
         [](const auto& value) -> json { return serializeData(value); }, data);
 }
 
-std::string getEvidenceType(const EvidenceData& data) {
-    return std::visit(
-        [](const auto& value) {
-            return evidenceType<std::decay_t<decltype(value)>>();
-        },
-        data);
-}
-
 }  // namespace
 
 bool EvidenceSerializer::write(const std::string& path,
@@ -106,7 +102,7 @@ bool EvidenceSerializer::write(const std::string& path,
         json object = {{"id", item.id},
                        {"source", item.source},
                        {"timestamp", item.timestamp},
-                       {"type", getEvidenceType(item.data)},
+                       {"type", evidenceTypeToString(item.type)},
                        {"description", item.description},
                        {"data", serializeEvidenceData(item.data)},
                        {"raw", item.raw},

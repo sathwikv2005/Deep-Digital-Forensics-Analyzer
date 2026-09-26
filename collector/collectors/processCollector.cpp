@@ -126,6 +126,7 @@ std::vector<Evidence> ProcessCollector::collect() {
         data.processPath = processPath;
 
         Evidence item;
+        item.type = EvidenceType::Process;
 
         item.id = "process-" + std::to_string(evidence.size() + 1);
 

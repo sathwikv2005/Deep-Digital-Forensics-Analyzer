@@ -314,6 +314,8 @@ void collectHistory(sqlite3* database, const std::string& profileName,
 
         Evidence item;
 
+        item.type = EvidenceType::BrowserHistory;
+
         item.id = "browser-" + std::to_string(evidence.size() + 1);
 
         item.source = "Chrome Browser";
@@ -477,6 +479,7 @@ void collectDownloads(sqlite3* database, const std::string& profileName,
         data.interruptReason = std::to_string(interruptReason);
 
         Evidence item;
+        item.type = EvidenceType::BrowserDownload;
 
         item.id = "download-" + std::to_string(evidence.size() + 1);
 

@@ -5,6 +5,15 @@
 #include <variant>
 #include <vector>
 
+enum class EvidenceType {
+    BrowserHistory,
+    BrowserDownload,
+    Process,
+    NetworkConnection,
+    File,
+    EventLog
+};
+
 struct BrowserHistoryEvidence {
     std::string url;
     std::string domain;
@@ -88,6 +97,8 @@ using EvidenceData =
 
 struct Evidence {
     std::string id;
+
+    EvidenceType type;
 
     std::string source;
     std::string timestamp;
