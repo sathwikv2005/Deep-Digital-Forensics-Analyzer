@@ -1,6 +1,7 @@
 #pragma once
 
 struct Evidence {
+    std::string id;
     std::string source;
     std::string timestamp;
     std::string category;

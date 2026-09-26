@@ -121,6 +121,7 @@ void collectProfile(const fs::path& profilePath,
 
         Evidence item;
 
+        item.id = "browser-" + std::to_string(evidence.size() + 1);
         item.source = "Chrome Browser";
         item.timestamp = chromeTimeToIso(visitTime);
         item.category = "Browser History";

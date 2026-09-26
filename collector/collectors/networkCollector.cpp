@@ -156,6 +156,7 @@ std::vector<Evidence> NetworkCollector::collect() {
 
         Evidence item;
 
+        item.id = "network-" + std::to_string(evidence.size() + 1);
         item.source = "Windows Network";
         item.timestamp = currentTimestamp();
         item.category = "Network Connection";

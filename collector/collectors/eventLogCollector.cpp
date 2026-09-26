@@ -62,6 +62,7 @@ std::vector<Evidence> EventLogCollector::collect() {
 
                 Evidence item;
 
+                item.id = "event-" + std::to_string(evidence.size() + 1);
                 item.source = "Windows Event Log";
                 item.timestamp = extractTimestamp(xml);
                 item.category = "System";

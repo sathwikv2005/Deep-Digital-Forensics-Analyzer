@@ -12,7 +12,8 @@ bool EvidenceSerializer::write(const std::string& path,
     json output = json::array();
 
     for (const auto& item : evidence) {
-        output.push_back({{"source", item.source},
+        output.push_back({{"id", item.id},
+                          {"source", item.source},
                           {"timestamp", item.timestamp},
                           {"category", item.category},
                           {"description", item.description},
