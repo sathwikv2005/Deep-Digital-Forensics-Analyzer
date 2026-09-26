@@ -21,5 +21,10 @@ target_include_directories(correlation PRIVATE
 if(MSVC)
     target_compile_options(correlation PRIVATE /W4)
 else()
-    target_compile_options(correlation PRIVATE -Wall -Wextra -Wpedantic)
+    target_compile_options(correlation PRIVATE
+        -Wall
+        -Wextra
+        -Wpedantic
+        -O2
+    )
 endif()
