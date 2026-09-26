@@ -11,26 +11,105 @@
 
 namespace {
 
-std::string extractTimestamp(const std::wstring& xml) {
-    const std::wstring prefix = L"<TimeCreated SystemTime='";
+std::wstring getXmlValue(const std::wstring& xml, const std::wstring& element) {
+    std::wstring open = L"<" + element + L">";
 
-    size_t start = xml.find(prefix);
+    std::wstring close = L"</" + element + L">";
+
+    size_t start = xml.find(open);
 
     if (start == std::wstring::npos) {
-        return "";
+        return L"";
     }
 
-    start += prefix.length();
+    start += open.length();
 
-    size_t end = xml.find(L"'", start);
+    size_t end = xml.find(close, start);
 
     if (end == std::wstring::npos) {
+        return L"";
+    }
+
+    return xml.substr(start, end - start);
+}
+
+std::wstring getAttribute(const std::wstring& xml, const std::wstring& element,
+                          const std::wstring& attribute) {
+    std::wstring elementStart = L"<" + element;
+
+    size_t start = xml.find(elementStart);
+
+    if (start == std::wstring::npos) {
+        return L"";
+    }
+
+    size_t end = xml.find(L">", start);
+
+    if (end == std::wstring::npos) {
+        return L"";
+    }
+
+    std::wstring section = xml.substr(start, end - start);
+
+    std::wstring search = attribute + L"='";
+
+    size_t attributeStart = section.find(search);
+
+    if (attributeStart == std::wstring::npos) {
+        search = attribute + L"=\"";
+
+        attributeStart = section.find(search);
+
+        if (attributeStart == std::wstring::npos) {
+            return L"";
+        }
+
+        attributeStart += search.length();
+
+        size_t attributeEnd = section.find(L"\"", attributeStart);
+
+        if (attributeEnd == std::wstring::npos) {
+            return L"";
+        }
+
+        return section.substr(attributeStart, attributeEnd - attributeStart);
+    }
+
+    attributeStart += search.length();
+
+    size_t attributeEnd = section.find(L"'", attributeStart);
+
+    if (attributeEnd == std::wstring::npos) {
+        return L"";
+    }
+
+    return section.substr(attributeStart, attributeEnd - attributeStart);
+}
+
+std::string toUtf8(const std::wstring& value) {
+    if (value.empty()) {
         return "";
     }
 
-    std::wstring timestamp = xml.substr(start, end - start);
+    int size = WideCharToMultiByte(CP_UTF8, 0, value.data(),
+                                   static_cast<int>(value.size()), nullptr, 0,
+                                   nullptr, nullptr);
 
-    return std::string(timestamp.begin(), timestamp.end());
+    if (size <= 0) {
+        return "";
+    }
+
+    std::string result(size, '\0');
+
+    WideCharToMultiByte(CP_UTF8, 0, value.data(),
+                        static_cast<int>(value.size()), result.data(), size,
+                        nullptr, nullptr);
+
+    return result;
+}
+
+std::string extractTimestamp(const std::wstring& xml) {
+    return toUtf8(getAttribute(xml, L"TimeCreated", L"SystemTime"));
 }
 
 }  // namespace
@@ -49,7 +128,7 @@ std::vector<Evidence> EventLogCollector::collect() {
         return evidence;
     }
 
-    EVT_HANDLE events[16];
+    EVT_HANDLE events[16]{};
 
     DWORD returned = 0;
 
@@ -66,32 +145,65 @@ std::vector<Evidence> EventLogCollector::collect() {
                 continue;
             }
 
-            std::vector<wchar_t> buffer(bufferUsed / sizeof(wchar_t));
+            std::vector<wchar_t> buffer(bufferUsed / sizeof(wchar_t) + 1);
 
-            if (EvtRender(nullptr, events[i], EvtRenderEventXml, bufferUsed,
-                          buffer.data(), &bufferUsed, &propertyCount)) {
-                std::wstring xml(buffer.data());
-
-                EventLogEvidence eventData;
-
-                eventData.channel = "System";
-
-                Evidence item;
-
-                item.id = "event-" + std::to_string(evidence.size() + 1);
-
-                item.source = "Windows Event Log";
-
-                item.timestamp = extractTimestamp(xml);
-
-                item.description = "Windows System event";
-
-                item.raw = std::string(xml.begin(), xml.end());
-
-                item.data = std::move(eventData);
-
-                evidence.push_back(std::move(item));
+            if (!EvtRender(nullptr, events[i], EvtRenderEventXml, bufferUsed,
+                           buffer.data(), &bufferUsed, &propertyCount)) {
+                EvtClose(events[i]);
+                continue;
             }
+
+            std::wstring xml(buffer.data());
+
+            std::string timestamp = extractTimestamp(xml);
+
+            std::string provider =
+                toUtf8(getAttribute(xml, L"Provider", L"Name"));
+
+            std::string eventIdString = toUtf8(getXmlValue(xml, L"EventID"));
+
+            uint32_t eventId = 0;
+
+            if (!eventIdString.empty()) {
+                try {
+                    eventId = static_cast<uint32_t>(std::stoul(eventIdString));
+                } catch (...) {
+                    eventId = 0;
+                }
+            }
+
+            std::string computer = toUtf8(getXmlValue(xml, L"Computer"));
+
+            EventLogEvidence data;
+
+            data.channel = "System";
+
+            data.eventId = eventId;
+
+            data.provider = provider;
+
+            data.computer = computer;
+
+            Evidence item;
+
+            item.id = "event-" + std::to_string(evidence.size() + 1);
+
+            item.source = "Windows Event Log";
+
+            item.timestamp = timestamp;
+
+            item.description =
+                "Windows System event " + std::to_string(eventId);
+
+            if (!provider.empty()) {
+                item.description += " from " + provider;
+            }
+
+            item.raw = toUtf8(xml);
+
+            item.data = std::move(data);
+
+            evidence.push_back(std::move(item));
 
             EvtClose(events[i]);
         }

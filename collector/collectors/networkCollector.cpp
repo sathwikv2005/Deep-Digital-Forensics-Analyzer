@@ -14,6 +14,28 @@
 
 namespace {
 
+std::string wideToUtf8(const std::wstring& value) {
+    if (value.empty()) {
+        return "";
+    }
+
+    int size = WideCharToMultiByte(CP_UTF8, 0, value.data(),
+                                   static_cast<int>(value.size()), nullptr, 0,
+                                   nullptr, nullptr);
+
+    if (size <= 0) {
+        return "";
+    }
+
+    std::string result(size, '\0');
+
+    WideCharToMultiByte(CP_UTF8, 0, value.data(),
+                        static_cast<int>(value.size()), result.data(), size,
+                        nullptr, nullptr);
+
+    return result;
+}
+
 std::string getProcessName(DWORD pid) {
     HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
 
@@ -21,9 +43,9 @@ std::string getProcessName(DWORD pid) {
         return "Unknown";
     }
 
-    wchar_t path[MAX_PATH];
+    wchar_t path[32768]{};
 
-    DWORD size = MAX_PATH;
+    DWORD size = static_cast<DWORD>(std::size(path));
 
     std::string result = "Unknown";
 
@@ -36,26 +58,12 @@ std::string getProcessName(DWORD pid) {
                                     ? widePath
                                     : widePath.substr(separator + 1);
 
-        result.assign(filename.begin(), filename.end());
+        result = wideToUtf8(filename);
     }
 
     CloseHandle(process);
 
     return result;
-}
-
-std::string ipToString(DWORD address) {
-    IN_ADDR addr{};
-
-    addr.S_un.S_addr = address;
-
-    char buffer[INET_ADDRSTRLEN]{};
-
-    if (!inet_ntop(AF_INET, &addr, buffer, sizeof(buffer))) {
-        return "";
-    }
-
-    return buffer;
 }
 
 std::string tcpStateToString(DWORD state) {
@@ -106,7 +114,7 @@ std::string currentTimestamp() {
 
     GetSystemTime(&time);
 
-    char buffer[64];
+    char buffer[64]{};
 
     snprintf(buffer, sizeof(buffer), "%04d-%02d-%02dT%02d:%02d:%02d.%03dZ",
              time.wYear, time.wMonth, time.wDay, time.wHour, time.wMinute,
@@ -115,20 +123,42 @@ std::string currentTimestamp() {
     return buffer;
 }
 
-}  // namespace
+std::string ipv4ToString(DWORD address) {
+    IN_ADDR addr{};
 
-std::vector<Evidence> NetworkCollector::collect() {
-    std::vector<Evidence> evidence;
+    addr.S_un.S_addr = address;
 
+    char buffer[INET_ADDRSTRLEN]{};
+
+    if (!inet_ntop(AF_INET, &addr, buffer, sizeof(buffer))) {
+        return "";
+    }
+
+    return buffer;
+}
+
+std::string ipv6ToString(const BYTE address[16]) {
+    IN6_ADDR addr{};
+
+    memcpy(&addr, address, sizeof(addr));
+
+    char buffer[INET6_ADDRSTRLEN]{};
+
+    if (!inet_ntop(AF_INET6, &addr, buffer, sizeof(buffer))) {
+        return "";
+    }
+
+    return buffer;
+}
+
+void collectIPv4(std::vector<Evidence>& evidence) {
     DWORD size = 0;
 
     DWORD result = GetExtendedTcpTable(nullptr, &size, FALSE, AF_INET,
                                        TCP_TABLE_OWNER_PID_ALL, 0);
 
     if (result != ERROR_INSUFFICIENT_BUFFER) {
-        std::cerr << "Failed to query TCP table: " << result << '\n';
-
-        return evidence;
+        return;
     }
 
     std::vector<BYTE> buffer(size);
@@ -139,17 +169,15 @@ std::vector<Evidence> NetworkCollector::collect() {
                                  TCP_TABLE_OWNER_PID_ALL, 0);
 
     if (result != NO_ERROR) {
-        std::cerr << "Failed to retrieve TCP table: " << result << '\n';
-
-        return evidence;
+        return;
     }
 
     for (DWORD i = 0; i < table->dwNumEntries; ++i) {
         const auto& connection = table->table[i];
 
-        std::string localIp = ipToString(connection.dwLocalAddr);
+        std::string localIp = ipv4ToString(connection.dwLocalAddr);
 
-        std::string remoteIp = ipToString(connection.dwRemoteAddr);
+        std::string remoteIp = ipv4ToString(connection.dwRemoteAddr);
 
         uint16_t localPort =
             ntohs(static_cast<u_short>(connection.dwLocalPort));
@@ -157,25 +185,25 @@ std::vector<Evidence> NetworkCollector::collect() {
         uint16_t remotePort =
             ntohs(static_cast<u_short>(connection.dwRemotePort));
 
-        std::string state = tcpStateToString(connection.dwState);
-
         std::string process = getProcessName(connection.dwOwningPid);
 
-        NetworkConnectionEvidence networkData;
+        std::string state = tcpStateToString(connection.dwState);
 
-        networkData.processId = connection.dwOwningPid;
+        NetworkConnectionEvidence data;
 
-        networkData.processName = process;
+        data.processId = connection.dwOwningPid;
 
-        networkData.localIp = localIp;
+        data.processName = process;
 
-        networkData.localPort = localPort;
+        data.localIp = localIp;
 
-        networkData.remoteIp = remoteIp;
+        data.localPort = localPort;
 
-        networkData.remotePort = remotePort;
+        data.remoteIp = remoteIp;
 
-        networkData.state = state;
+        data.remotePort = remotePort;
+
+        data.state = state;
 
         Evidence item;
 
@@ -190,15 +218,108 @@ std::vector<Evidence> NetworkCollector::collect() {
             localIp + ":" + std::to_string(localPort) + " -> " + remoteIp +
             ":" + std::to_string(remotePort) + " [" + state + "]";
 
-        item.raw = "pid=" + std::to_string(connection.dwOwningPid) +
-                   "; process=" + process + "; local=" + localIp + ":" +
-                   std::to_string(localPort) + "; remote=" + remoteIp + ":" +
-                   std::to_string(remotePort) + "; state=" + state;
+        item.raw =
+            "family=IPv4"
+            "; pid=" +
+            std::to_string(connection.dwOwningPid) + "; process=" + process +
+            "; local=" + localIp + ":" + std::to_string(localPort) +
+            "; remote=" + remoteIp + ":" + std::to_string(remotePort) +
+            "; state=" + state;
 
-        item.data = std::move(networkData);
+        item.data = std::move(data);
 
         evidence.push_back(std::move(item));
     }
+}
+
+void collectIPv6(std::vector<Evidence>& evidence) {
+    DWORD size = 0;
+
+    DWORD result = GetExtendedTcpTable(nullptr, &size, FALSE, AF_INET6,
+                                       TCP_TABLE_OWNER_PID_ALL, 0);
+
+    if (result != ERROR_INSUFFICIENT_BUFFER) {
+        return;
+    }
+
+    std::vector<BYTE> buffer(size);
+
+    auto* table = reinterpret_cast<PMIB_TCP6TABLE_OWNER_PID>(buffer.data());
+
+    result = GetExtendedTcpTable(table, &size, FALSE, AF_INET6,
+                                 TCP_TABLE_OWNER_PID_ALL, 0);
+
+    if (result != NO_ERROR) {
+        return;
+    }
+
+    for (DWORD i = 0; i < table->dwNumEntries; ++i) {
+        const auto& connection = table->table[i];
+
+        std::string localIp = ipv6ToString(connection.ucLocalAddr);
+
+        std::string remoteIp = ipv6ToString(connection.ucRemoteAddr);
+
+        uint16_t localPort =
+            ntohs(static_cast<u_short>(connection.dwLocalPort));
+
+        uint16_t remotePort =
+            ntohs(static_cast<u_short>(connection.dwRemotePort));
+
+        std::string process = getProcessName(connection.dwOwningPid);
+
+        std::string state = tcpStateToString(connection.dwState);
+
+        NetworkConnectionEvidence data;
+
+        data.processId = connection.dwOwningPid;
+
+        data.processName = process;
+
+        data.localIp = localIp;
+
+        data.localPort = localPort;
+
+        data.remoteIp = remoteIp;
+
+        data.remotePort = remotePort;
+
+        data.state = state;
+
+        Evidence item;
+
+        item.id = "network-" + std::to_string(evidence.size() + 1);
+
+        item.source = "Windows Network";
+
+        item.timestamp = currentTimestamp();
+
+        item.description =
+            process + " (" + std::to_string(connection.dwOwningPid) + ") [" +
+            localIp + "]:" + std::to_string(localPort) + " -> [" + remoteIp +
+            "]:" + std::to_string(remotePort) + " [" + state + "]";
+
+        item.raw =
+            "family=IPv6"
+            "; pid=" +
+            std::to_string(connection.dwOwningPid) + "; process=" + process +
+            "; local=[" + localIp + "]:" + std::to_string(localPort) +
+            "; remote=[" + remoteIp + "]:" + std::to_string(remotePort) +
+            "; state=" + state;
+
+        item.data = std::move(data);
+
+        evidence.push_back(std::move(item));
+    }
+}
+
+}  // namespace
+
+std::vector<Evidence> NetworkCollector::collect() {
+    std::vector<Evidence> evidence;
+
+    collectIPv4(evidence);
+    collectIPv6(evidence);
 
     return evidence;
 }
