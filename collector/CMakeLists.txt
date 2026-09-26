@@ -25,6 +25,10 @@ target_include_directories(collector PRIVATE
     include/sqlite
 )
 
+target_compile_options(collector PRIVATE
+    $<$<COMPILE_LANGUAGE:C,CXX>:-O2>
+)
+
 target_link_libraries(
     collector
     PRIVATE

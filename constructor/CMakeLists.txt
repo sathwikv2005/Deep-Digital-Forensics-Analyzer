@@ -16,6 +16,10 @@ target_include_directories(constructor PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../collector/include
 )
 
+target_compile_options(constructor PRIVATE
+    -O2
+)
+
 set_target_properties(constructor PROPERTIES
     RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
