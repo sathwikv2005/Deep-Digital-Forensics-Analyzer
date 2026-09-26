@@ -25,8 +25,10 @@ target_include_directories(collector PRIVATE
     include/sqlite
 )
 
-target_link_libraries(collector PRIVATE
-    wevtapi
+target_link_libraries(
+    collector
+    PRIVATE
     iphlpapi
     ws2_32
+    wevtapi
 )
