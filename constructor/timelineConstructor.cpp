@@ -11,6 +11,7 @@ TimelineEvent TimelineConstructor::createEvent(const nlohmann::json& item) {
     event.timestamp = item.value("timestamp", "");
     event.source = item.value("source", "");
     event.category = item.value("type", "Unknown");
+
     event.data = item;
 
     event.timestampMs = parseTimestamp(event.timestamp);
@@ -72,6 +73,7 @@ int64_t TimelineConstructor::parseTimestamp(const std::string& timestamp) {
 std::vector<TimelineEvent> TimelineConstructor::construct(
     const std::vector<nlohmann::json>& evidence) {
     std::vector<TimelineEvent> timeline;
+
     timeline.reserve(evidence.size());
 
     for (const auto& item : evidence) {

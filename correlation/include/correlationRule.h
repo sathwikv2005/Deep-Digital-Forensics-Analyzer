@@ -1,6 +1,7 @@
 #ifndef CORRELATION_RULE_H
 #define CORRELATION_RULE_H
 
+#include <cstdint>
 #include <string>
 
 #include "correlation.h"

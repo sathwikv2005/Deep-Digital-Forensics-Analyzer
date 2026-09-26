@@ -42,20 +42,29 @@ int main() {
     }
 
     std::vector<EvidenceNode> events;
+
     events.reserve(timeline.size());
 
     for (const auto& item : timeline) {
         EvidenceNode event;
 
         event.id = item.value("id", "");
+
         event.source = item.value("source", "");
+
         event.category = item.value("category", "");
+
         event.timestamp = item.value("timestamp", "");
+
         event.timestampMs = item.value("timestampMs", 0ULL);
 
-        if (item.contains("data")) event.data = item["data"];
+        if (item.contains("data")) {
+            event.data = item["data"];
+        }
 
-        if (event.id.empty()) continue;
+        if (event.id.empty()) {
+            continue;
+        }
 
         events.push_back(std::move(event));
     }
@@ -79,6 +88,7 @@ int main() {
                           {"endTime", correlation.endTime},
                           {"eventIds", correlation.eventIds},
                           {"indicators", correlation.indicators},
+                          {"sources", correlation.sources},
                           {"reason", correlation.reason}});
     }
 

@@ -1,30 +1,37 @@
 #include "indicatorExtractor.h"
 
 #include <algorithm>
-#include <cctype>
-#include <regex>
-#include <unordered_set>
 
 namespace {
 
-std::string dumpNode(const EvidenceNode& node) {
-    std::string text;
+void addUnique(std::vector<std::string>& values, const std::string& value) {
+    if (value.empty()) return;
 
-    text += node.source;
-    text += " ";
-    text += node.category;
-    text += " ";
-    text += node.timestamp;
-
-    if (!node.data.is_null()) text += " " + node.data.dump();
-
-    return text;
+    if (std::find(values.begin(), values.end(), value) == values.end()) {
+        values.push_back(value);
+    }
 }
 
-void addUnique(std::vector<std::string>& values,
-               std::unordered_set<std::string>& seen,
-               const std::string& value) {
-    if (seen.insert(value).second) values.push_back(value);
+void addString(const json& data, const char* key,
+               std::vector<std::string>& values) {
+    if (!data.contains(key)) return;
+    if (!data[key].is_string()) return;
+
+    addUnique(values, data[key].get<std::string>());
+}
+
+const json& getEvidenceData(const EvidenceNode& node) {
+    static const json empty = json::object();
+
+    if (!node.data.contains("data")) {
+        return empty;
+    }
+
+    if (!node.data["data"].is_object()) {
+        return empty;
+    }
+
+    return node.data["data"];
 }
 
 }  // namespace
@@ -32,94 +39,82 @@ void addUnique(std::vector<std::string>& values,
 Indicators IndicatorExtractor::extract(const EvidenceNode& node) {
     Indicators indicators;
 
-    std::string text = dumpNode(node);
-
-    extractUrls(text, indicators);
-    extractIps(text, indicators);
-    extractFiles(text, indicators);
-    extractProcesses(text, indicators);
-    extractDomains(indicators);
+    if (node.category == "BrowserHistory") {
+        extractBrowserHistory(node, indicators);
+    } else if (node.category == "BrowserDownload") {
+        extractBrowserDownload(node, indicators);
+    } else if (node.category == "Process") {
+        extractProcess(node, indicators);
+    } else if (node.category == "NetworkConnection") {
+        extractNetwork(node, indicators);
+    } else if (node.category == "File") {
+        extractFile(node, indicators);
+    } else if (node.category == "EventLog") {
+        extractEventLog(node, indicators);
+    }
 
     return indicators;
 }
 
-void IndicatorExtractor::extractUrls(const std::string& text,
+void IndicatorExtractor::extractBrowserHistory(const EvidenceNode& node,
+                                               Indicators& indicators) {
+    const auto& data = getEvidenceData(node);
+
+    addString(data, "url", indicators.urls);
+    addString(data, "domain", indicators.domains);
+
+    if (data.contains("resolvedIps") && data["resolvedIps"].is_array()) {
+        for (const auto& ip : data["resolvedIps"]) {
+            if (ip.is_string()) {
+                addUnique(indicators.ips, ip.get<std::string>());
+            }
+        }
+    }
+}
+
+void IndicatorExtractor::extractBrowserDownload(const EvidenceNode& node,
+                                                Indicators& indicators) {
+    const auto& data = getEvidenceData(node);
+
+    addString(data, "url", indicators.urls);
+    addString(data, "domain", indicators.domains);
+    addString(data, "filePath", indicators.files);
+    addString(data, "fileName", indicators.files);
+}
+
+void IndicatorExtractor::extractProcess(const EvidenceNode& node,
+                                        Indicators& indicators) {
+    const auto& data = getEvidenceData(node);
+
+    addString(data, "processName", indicators.processes);
+    addString(data, "processPath", indicators.files);
+    addString(data, "parentProcessName", indicators.processes);
+    addString(data, "username", indicators.users);
+}
+
+void IndicatorExtractor::extractNetwork(const EvidenceNode& node,
+                                        Indicators& indicators) {
+    const auto& data = getEvidenceData(node);
+
+    addString(data, "localIp", indicators.ips);
+    addString(data, "remoteIp", indicators.ips);
+    addString(data, "processName", indicators.processes);
+}
+
+void IndicatorExtractor::extractFile(const EvidenceNode& node,
                                      Indicators& indicators) {
-    static const std::regex pattern(R"(https?://[^\s"'<>]+)",
-                                    std::regex::icase);
+    const auto& data = getEvidenceData(node);
 
-    std::unordered_set<std::string> seen;
-
-    for (std::sregex_iterator it(text.begin(), text.end(), pattern);
-         it != std::sregex_iterator(); ++it) {
-        std::string url = it->str();
-
-        while (!url.empty() && (url.back() == ',' || url.back() == '.' ||
-                                url.back() == ')' || url.back() == ';')) {
-            url.pop_back();
-        }
-
-        addUnique(indicators.urls, seen, url);
-    }
+    addString(data, "filePath", indicators.files);
+    addString(data, "fileName", indicators.files);
+    addString(data, "sha256", indicators.hashes);
 }
 
-void IndicatorExtractor::extractIps(const std::string& text,
-                                    Indicators& indicators) {
-    static const std::regex pattern(
-        R"(\b(?:25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])(?:\.(?:25[0-5]|2[0-4][0-9]|1?[0-9]?[0-9])){3}\b)");
+void IndicatorExtractor::extractEventLog(const EvidenceNode& node,
+                                         Indicators& indicators) {
+    const auto& data = getEvidenceData(node);
 
-    std::unordered_set<std::string> seen;
-
-    for (std::sregex_iterator it(text.begin(), text.end(), pattern);
-         it != std::sregex_iterator(); ++it) {
-        addUnique(indicators.ips, seen, it->str());
-    }
-}
-
-void IndicatorExtractor::extractFiles(const std::string& text,
-                                      Indicators& indicators) {
-    static const std::regex pattern(
-        R"([A-Za-z]:\\(?:[^\\/:*?"<>|\r\n]+\\)*[^\\/:*?"<>|\r\n]+)");
-
-    std::unordered_set<std::string> seen;
-
-    for (std::sregex_iterator it(text.begin(), text.end(), pattern);
-         it != std::sregex_iterator(); ++it) {
-        addUnique(indicators.files, seen, it->str());
-    }
-}
-
-void IndicatorExtractor::extractProcesses(const std::string& text,
-                                          Indicators& indicators) {
-    static const std::regex pattern(R"(\b[A-Za-z0-9_.-]+\.exe\b)",
-                                    std::regex::icase);
-
-    std::unordered_set<std::string> seen;
-
-    for (std::sregex_iterator it(text.begin(), text.end(), pattern);
-         it != std::sregex_iterator(); ++it) {
-        addUnique(indicators.processes, seen, it->str());
-    }
-}
-
-void IndicatorExtractor::extractDomains(Indicators& indicators) {
-    std::unordered_set<std::string> seen;
-
-    static const std::regex pattern(R"(https?://([^/:?#\s]+))",
-                                    std::regex::icase);
-
-    for (const auto& url : indicators.urls) {
-        std::smatch match;
-
-        if (std::regex_search(url, match, pattern)) {
-            std::string domain = match[1].str();
-
-            std::transform(domain.begin(), domain.end(), domain.begin(),
-                           [](unsigned char c) {
-                               return static_cast<char>(std::tolower(c));
-                           });
-
-            addUnique(indicators.domains, seen, domain);
-        }
+    if (data.contains("computer") && data["computer"].is_string()) {
+        addUnique(indicators.hosts, data["computer"].get<std::string>());
     }
 }

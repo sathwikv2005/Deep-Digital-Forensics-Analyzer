@@ -2,19 +2,21 @@
 
 #include <cstdint>
 #include <string>
-#include <vector>
 
 #include "nlohmann/json.hpp"
+
+using json = nlohmann::json;
 
 struct TimelineEvent {
     std::string id;
     std::string timestamp;
     std::string source;
     std::string category;
-    nlohmann::json data;
 
-    int64_t timestampMs = -1;
+    uint64_t timestampMs = 0;
     bool validTimestamp = false;
+
+    json data;
 };
 
 class TimelineConstructor {

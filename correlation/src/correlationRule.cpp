@@ -11,10 +11,11 @@ bool TemporalRule::matches(const EvidenceNode& first,
                            const EvidenceNode& second) const {
     uint64_t difference;
 
-    if (first.timestampMs > second.timestampMs)
+    if (first.timestampMs > second.timestampMs) {
         difference = first.timestampMs - second.timestampMs;
-    else
+    } else {
         difference = second.timestampMs - first.timestampMs;
+    }
 
     return difference <= windowMs;
 }
@@ -50,12 +51,15 @@ std::string TemporalRule::name() const { return "TEMPORAL_SEQUENCE"; }
 bool EntityRule::matches(const EvidenceNode& first,
                          const EvidenceNode& second) const {
     Indicators a = IndicatorExtractor::extract(first);
+
     Indicators b = IndicatorExtractor::extract(second);
 
     auto shared = [](const auto& firstValues, const auto& secondValues) {
         for (const auto& firstValue : firstValues) {
             for (const auto& secondValue : secondValues) {
-                if (firstValue == secondValue) return true;
+                if (firstValue == secondValue) {
+                    return true;
+                }
             }
         }
 
@@ -63,7 +67,8 @@ bool EntityRule::matches(const EvidenceNode& first,
     };
 
     return shared(a.domains, b.domains) || shared(a.ips, b.ips) ||
-           shared(a.files, b.files) || shared(a.processes, b.processes);
+           shared(a.files, b.files) || shared(a.processes, b.processes) ||
+           shared(a.hashes, b.hashes);
 }
 
 Correlation EntityRule::evaluate(const EvidenceNode& first,
@@ -80,13 +85,15 @@ Correlation EntityRule::evaluate(const EvidenceNode& first,
     result.eventIds = {first.id, second.id};
 
     Indicators a = IndicatorExtractor::extract(first);
+
     Indicators b = IndicatorExtractor::extract(second);
 
     auto addShared = [&](const auto& firstValues, const auto& secondValues) {
         for (const auto& firstValue : firstValues) {
             for (const auto& secondValue : secondValues) {
-                if (firstValue == secondValue)
+                if (firstValue == secondValue) {
                     result.indicators.push_back(firstValue);
+                }
             }
         }
     };
@@ -95,10 +102,13 @@ Correlation EntityRule::evaluate(const EvidenceNode& first,
     addShared(a.ips, b.ips);
     addShared(a.files, b.files);
     addShared(a.processes, b.processes);
+    addShared(a.hashes, b.hashes);
 
     result.confidence = 0.75;
 
-    result.reason = "Events share one or more forensic indicators.";
+    result.reason =
+        "Events share one or more forensic "
+        "indicators.";
 
     return result;
 }

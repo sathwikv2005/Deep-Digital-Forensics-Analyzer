@@ -26,10 +26,12 @@ class CorrelationEngine {
     std::unordered_map<std::string, std::vector<size_t>> ipIndex;
     std::unordered_map<std::string, std::vector<size_t>> fileIndex;
     std::unordered_map<std::string, std::vector<size_t>> processIndex;
+    std::unordered_map<std::string, std::vector<size_t>> hashIndex;
 
     std::vector<std::unique_ptr<CorrelationRule>> rules;
 
     void filterToRecentEvents();
+
     void buildIndexes();
 
     void addToIndex(std::unordered_map<std::string, std::vector<size_t>>& index,

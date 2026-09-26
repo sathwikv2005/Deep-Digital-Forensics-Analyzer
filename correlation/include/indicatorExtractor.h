@@ -13,6 +13,8 @@ struct Indicators {
     std::vector<std::string> files;
     std::vector<std::string> processes;
     std::vector<std::string> users;
+    std::vector<std::string> hashes;
+    std::vector<std::string> hosts;
 };
 
 class IndicatorExtractor {
@@ -20,12 +22,22 @@ class IndicatorExtractor {
     static Indicators extract(const EvidenceNode& node);
 
    private:
-    static void extractUrls(const std::string& text, Indicators& indicators);
-    static void extractIps(const std::string& text, Indicators& indicators);
-    static void extractFiles(const std::string& text, Indicators& indicators);
-    static void extractProcesses(const std::string& text,
-                                 Indicators& indicators);
-    static void extractDomains(Indicators& indicators);
+    static void extractBrowserHistory(const EvidenceNode& node,
+                                      Indicators& indicators);
+
+    static void extractBrowserDownload(const EvidenceNode& node,
+                                       Indicators& indicators);
+
+    static void extractProcess(const EvidenceNode& node,
+                               Indicators& indicators);
+
+    static void extractNetwork(const EvidenceNode& node,
+                               Indicators& indicators);
+
+    static void extractFile(const EvidenceNode& node, Indicators& indicators);
+
+    static void extractEventLog(const EvidenceNode& node,
+                                Indicators& indicators);
 };
 
 #endif
