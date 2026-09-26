@@ -4,6 +4,7 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "correlation.h"
@@ -39,6 +40,13 @@ class CorrelationEngine {
     void processIndicatorIndex(
         const std::unordered_map<std::string, std::vector<size_t>>& index,
         const std::string& indicatorType, std::vector<Correlation>& results);
+
+    void processCrossSourceIndex(
+        const std::unordered_map<std::string, std::vector<size_t>>& index,
+        const std::string& indicatorType, std::vector<int>& parent,
+        std::vector<std::unordered_set<std::string>>& componentIndicators);
+
+    void runCrossSourceCorrelations(std::vector<Correlation>& results);
 };
 
 #endif

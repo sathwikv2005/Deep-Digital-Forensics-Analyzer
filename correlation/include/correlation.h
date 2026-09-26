@@ -17,6 +17,7 @@ struct Correlation {
 
     std::vector<std::string> eventIds;
     std::vector<std::string> indicators;
+    std::vector<std::string> sources;
 
     std::string reason;
 };
