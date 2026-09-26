@@ -1,18 +1,39 @@
 #include <iostream>
-#include <vector>
 
+#include "collectors/browserCollector.h"
 #include "collectors/eventLogCollector.h"
+#include "collectors/networkCollector.h"
 #include "serialization/evidenceSerializer.h"
 
 int main() {
     EventLogCollector eventCollector;
+    BrowserCollector browserCollector;
+    NetworkCollector networkCollector;
 
-    std::vector<Evidence> evidence = eventCollector.collect();
+    auto eventEvidence = eventCollector.collect();
+    auto browserEvidence = browserCollector.collect();
+    auto networkEvidence = networkCollector.collect();
 
-    std::cout << "Collected " << evidence.size() << " events\n";
+    std::cout << "Collected " << eventEvidence.size() << " Windows events\n";
 
-    if (!EvidenceSerializer::write("output/event_logs.json", evidence)) {
+    std::cout << "Collected " << browserEvidence.size() << " browser events\n";
+
+    std::cout << "Collected " << networkEvidence.size() << " network events\n";
+
+    if (!EvidenceSerializer::write("output/event_logs.json", eventEvidence)) {
         std::cerr << "Failed to write event logs\n";
+        return 1;
+    }
+
+    if (!EvidenceSerializer::write("output/browser_history.json",
+                                   browserEvidence)) {
+        std::cerr << "Failed to write browser history\n";
+        return 1;
+    }
+
+    if (!EvidenceSerializer::write("output/network_connections.json",
+                                   networkEvidence)) {
+        std::cerr << "Failed to write network connections\n";
         return 1;
     }
 
