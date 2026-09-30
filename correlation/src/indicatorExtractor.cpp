@@ -1,6 +1,8 @@
 #include "indicatorExtractor.h"
 
 #include <algorithm>
+#include <cctype>
+#include <string>
 
 namespace {
 
@@ -15,21 +17,38 @@ void addUnique(std::vector<std::string>& values, const std::string& value) {
 void addString(const json& data, const char* key,
                std::vector<std::string>& values) {
     if (!data.contains(key)) return;
+
     if (!data[key].is_string()) return;
 
     addUnique(values, data[key].get<std::string>());
 }
 
+std::string lower(std::string value) {
+    std::transform(
+        value.begin(), value.end(), value.begin(),
+        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+
+    return value;
+}
+
+std::string normalizeProcessName(const std::string& process) {
+    if (process.empty()) return {};
+
+    std::string value = lower(process);
+
+    const size_t slash = value.find_last_of("\\/");
+
+    if (slash != std::string::npos) value = value.substr(slash + 1);
+
+    return value;
+}
+
 const json& getEvidenceData(const EvidenceNode& node) {
     static const json empty = json::object();
 
-    if (!node.data.contains("data")) {
-        return empty;
-    }
+    if (!node.data.contains("data")) return empty;
 
-    if (!node.data["data"].is_object()) {
-        return empty;
-    }
+    if (!node.data["data"].is_object()) return empty;
 
     return node.data["data"];
 }
@@ -41,14 +60,19 @@ Indicators IndicatorExtractor::extract(const EvidenceNode& node) {
 
     if (node.category == "BrowserHistory") {
         extractBrowserHistory(node, indicators);
+
     } else if (node.category == "BrowserDownload") {
         extractBrowserDownload(node, indicators);
+
     } else if (node.category == "Process") {
         extractProcess(node, indicators);
+
     } else if (node.category == "NetworkConnection") {
         extractNetwork(node, indicators);
+
     } else if (node.category == "File") {
         extractFile(node, indicators);
+
     } else if (node.category == "EventLog") {
         extractEventLog(node, indicators);
     }
@@ -61,6 +85,7 @@ void IndicatorExtractor::extractBrowserHistory(const EvidenceNode& node,
     const auto& data = getEvidenceData(node);
 
     addString(data, "url", indicators.urls);
+
     addString(data, "domain", indicators.domains);
 
     if (data.contains("resolvedIps") && data["resolvedIps"].is_array()) {
@@ -77,8 +102,11 @@ void IndicatorExtractor::extractBrowserDownload(const EvidenceNode& node,
     const auto& data = getEvidenceData(node);
 
     addString(data, "url", indicators.urls);
+
     addString(data, "domain", indicators.domains);
+
     addString(data, "filePath", indicators.files);
+
     addString(data, "fileName", indicators.files);
 }
 
@@ -86,9 +114,39 @@ void IndicatorExtractor::extractProcess(const EvidenceNode& node,
                                         Indicators& indicators) {
     const auto& data = getEvidenceData(node);
 
-    addString(data, "processName", indicators.processes);
+    /*
+     * Process identity is normalized to the
+     * executable filename.
+     *
+     * C:\Windows\System32\cmd.exe
+     *              ↓
+     *           cmd.exe
+     *
+     * This allows Windows Security process
+     * telemetry to correlate with network
+     * telemetry that may only contain cmd.exe.
+     */
+    if (data.contains("processName") && data["processName"].is_string()) {
+        const std::string process =
+            normalizeProcessName(data["processName"].get<std::string>());
+
+        addUnique(indicators.processes, process);
+    }
+
+    /*
+     * Keep the complete process path as a
+     * file/path indicator.
+     */
     addString(data, "processPath", indicators.files);
-    addString(data, "parentProcessName", indicators.processes);
+
+    /*
+     * Do NOT add parentProcessName to the
+     * process identity index.
+     *
+     * Parent-child relationships should be
+     * analyzed separately by ProcessTreeRule.
+     */
+
     addString(data, "username", indicators.users);
 }
 
@@ -97,8 +155,19 @@ void IndicatorExtractor::extractNetwork(const EvidenceNode& node,
     const auto& data = getEvidenceData(node);
 
     addString(data, "localIp", indicators.ips);
+
     addString(data, "remoteIp", indicators.ips);
-    addString(data, "processName", indicators.processes);
+
+    /*
+     * Normalize network process names in the
+     * exact same way as Windows process events.
+     */
+    if (data.contains("processName") && data["processName"].is_string()) {
+        const std::string process =
+            normalizeProcessName(data["processName"].get<std::string>());
+
+        addUnique(indicators.processes, process);
+    }
 }
 
 void IndicatorExtractor::extractFile(const EvidenceNode& node,
@@ -106,7 +175,9 @@ void IndicatorExtractor::extractFile(const EvidenceNode& node,
     const auto& data = getEvidenceData(node);
 
     addString(data, "filePath", indicators.files);
+
     addString(data, "fileName", indicators.files);
+
     addString(data, "sha256", indicators.hashes);
 }
 

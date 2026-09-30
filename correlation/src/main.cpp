@@ -58,13 +58,9 @@ int main() {
 
         event.timestampMs = item.value("timestampMs", 0ULL);
 
-        if (item.contains("data")) {
-            event.data = item["data"];
-        }
+        if (item.contains("data")) event.data = item["data"];
 
-        if (event.id.empty()) {
-            continue;
-        }
+        if (event.id.empty()) continue;
 
         events.push_back(std::move(event));
     }
