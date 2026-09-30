@@ -1,13 +1,13 @@
 #include "processCollector.h"
 
-// clang-format off
 #include <windows.h>
-#include <tlhelp32.h>
-// clang-format on
+#include <winevt.h>
 
 #include <iostream>
 #include <string>
 #include <vector>
+
+#pragma comment(lib, "wevtapi.lib")
 
 namespace {
 
@@ -33,120 +33,230 @@ std::string wideToUtf8(const std::wstring& value) {
     return result;
 }
 
-std::string getProcessPath(DWORD pid) {
-    HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+std::wstring renderEvent(EVT_HANDLE event) {
+    DWORD bufferSize = 0;
+    DWORD bufferUsed = 0;
+    DWORD propertyCount = 0;
 
-    if (!process) {
-        return "";
+    EvtRender(nullptr, event, EvtRenderEventXml, 0, nullptr, &bufferSize,
+              &propertyCount);
+
+    if (GetLastError() != ERROR_INSUFFICIENT_BUFFER) {
+        return L"";
     }
 
-    wchar_t path[32768]{};
+    std::vector<wchar_t> buffer(bufferSize);
 
-    DWORD size = static_cast<DWORD>(std::size(path));
-
-    std::string result;
-
-    if (QueryFullProcessImageNameW(process, 0, path, &size)) {
-        result = wideToUtf8(std::wstring(path, size));
+    if (!EvtRender(nullptr, event, EvtRenderEventXml, bufferSize, buffer.data(),
+                   &bufferUsed, &propertyCount)) {
+        return L"";
     }
 
-    CloseHandle(process);
-
-    return result;
+    return std::wstring(buffer.data());
 }
 
-std::string fileNameFromPath(const std::string& path) {
-    if (path.empty()) {
-        return "";
+std::wstring extractValue(const std::wstring& xml, const std::wstring& tag) {
+    std::wstring openTag = L"<" + tag + L">";
+
+    std::wstring closeTag = L"</" + tag + L">";
+
+    size_t start = xml.find(openTag);
+
+    if (start == std::wstring::npos) {
+        return L"";
     }
 
-    size_t position = path.find_last_of("\\/");
+    start += openTag.size();
 
-    if (position == std::string::npos) {
-        return path;
+    size_t end = xml.find(closeTag, start);
+
+    if (end == std::wstring::npos) {
+        return L"";
     }
 
-    return path.substr(position + 1);
+    return xml.substr(start, end - start);
 }
 
-std::string currentTimestamp() {
-    SYSTEMTIME time{};
+std::string extractTimestamp(const std::wstring& xml) {
+    const std::wstring singlePrefix = L"SystemTime='";
 
-    GetSystemTime(&time);
+    size_t start = xml.find(singlePrefix);
 
-    char buffer[64]{};
+    if (start != std::wstring::npos) {
+        start += singlePrefix.size();
 
-    snprintf(buffer, sizeof(buffer), "%04d-%02d-%02dT%02d:%02d:%02d.%03dZ",
-             time.wYear, time.wMonth, time.wDay, time.wHour, time.wMinute,
-             time.wSecond, time.wMilliseconds);
+        size_t end = xml.find(L"'", start);
 
-    return buffer;
+        if (end != std::wstring::npos) {
+            return wideToUtf8(xml.substr(start, end - start));
+        }
+    }
+
+    const std::wstring doublePrefix = L"SystemTime=\"";
+
+    start = xml.find(doublePrefix);
+
+    if (start != std::wstring::npos) {
+        start += doublePrefix.size();
+
+        size_t end = xml.find(L"\"", start);
+
+        if (end != std::wstring::npos) {
+            return wideToUtf8(xml.substr(start, end - start));
+        }
+    }
+
+    return "";
+}
+
+std::wstring extractDataValue(const std::wstring& xml,
+                              const std::wstring& name) {
+    std::wstring patterns[] = {L"<Data Name=\"" + name + L"\">",
+                               L"<Data Name='" + name + L"'>"};
+
+    for (const auto& pattern : patterns) {
+        size_t start = xml.find(pattern);
+
+        if (start == std::wstring::npos) {
+            continue;
+        }
+
+        start += pattern.size();
+
+        size_t end = xml.find(L"</Data>", start);
+
+        if (end == std::wstring::npos) {
+            return L"";
+        }
+
+        return xml.substr(start, end - start);
+    }
+
+    return L"";
 }
 
 }  // namespace
 
 std::vector<Evidence> ProcessCollector::collect() {
-    std::vector<Evidence> evidence;
+    evidence_.clear();
 
-    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    std::cout << "[Process] Collecting historical process creation events...\n";
 
-    if (snapshot == INVALID_HANDLE_VALUE) {
-        std::cerr << "CreateToolhelp32Snapshot failed: " << GetLastError()
-                  << '\n';
+    EVT_HANDLE query =
+        EvtQuery(nullptr, L"Security", L"*[System[(EventID=4688)]]",
+                 EvtQueryChannelPath);
 
-        return evidence;
+    if (!query) {
+        std::cerr << "[Process] EvtQuery failed: " << GetLastError() << '\n';
+
+        return evidence_;
     }
 
-    PROCESSENTRY32W processEntry{};
+    while (true) {
+        EVT_HANDLE events[16];
+        DWORD returned = 0;
 
-    processEntry.dwSize = sizeof(PROCESSENTRY32W);
+        BOOL result = EvtNext(query, 16, events, INFINITE, 0, &returned);
 
-    if (!Process32FirstW(snapshot, &processEntry)) {
-        CloseHandle(snapshot);
+        if (!result) {
+            DWORD error = GetLastError();
 
-        return evidence;
+            if (error == ERROR_NO_MORE_ITEMS) {
+                break;
+            }
+
+            std::cerr << "[Process] EvtNext failed: " << error << '\n';
+
+            break;
+        }
+
+        for (DWORD i = 0; i < returned; ++i) {
+            handleEvent(events[i]);
+            EvtClose(events[i]);
+        }
     }
 
-    do {
-        DWORD pid = processEntry.th32ProcessID;
+    EvtClose(query);
 
-        DWORD parentPid = processEntry.th32ParentProcessID;
+    std::cout << "[Process] Collection complete. Events: " << evidence_.size()
+              << '\n';
 
-        std::string processPath = getProcessPath(pid);
+    return evidence_;
+}
 
-        std::string processName = wideToUtf8(processEntry.szExeFile);
+void ProcessCollector::handleEvent(void* eventHandle) {
+    EVT_HANDLE event = static_cast<EVT_HANDLE>(eventHandle);
 
-        ProcessEvidence data;
+    std::wstring xml = renderEvent(event);
 
-        data.processId = pid;
-        data.parentProcessId = parentPid;
+    if (xml.empty()) {
+        return;
+    }
 
-        data.processName = processName;
+    std::wstring processIdValue = extractDataValue(xml, L"NewProcessId");
 
-        data.processPath = processPath;
+    std::wstring parentProcessIdValue = extractDataValue(xml, L"ProcessId");
 
-        Evidence item;
-        item.type = EvidenceType::Process;
+    std::wstring processNameValue = extractDataValue(xml, L"NewProcessName");
 
-        item.id = "process-" + std::to_string(evidence.size() + 1);
+    std::wstring parentProcessNameValue =
+        extractDataValue(xml, L"ParentProcessName");
 
-        item.source = "Windows Process";
+    std::wstring commandLineValue = extractDataValue(xml, L"CommandLine");
 
-        item.timestamp = currentTimestamp();
+    std::wstring targetUserNameValue = extractDataValue(xml, L"TargetUserName");
 
-        item.description = processName + " (" + std::to_string(pid) + ")";
+    if (processNameValue.empty()) {
+        return;
+    }
 
-        item.raw = "pid=" + std::to_string(pid) +
-                   "; ppid=" + std::to_string(parentPid) +
-                   "; process=" + processName + "; path=" + processPath;
+    uint32_t processId = 0;
+    uint32_t parentProcessId = 0;
 
-        item.data = std::move(data);
+    try {
+        if (!processIdValue.empty()) {
+            processId =
+                static_cast<uint32_t>(std::stoul(processIdValue, nullptr, 0));
+        }
 
-        evidence.push_back(std::move(item));
+        if (!parentProcessIdValue.empty()) {
+            parentProcessId = static_cast<uint32_t>(
+                std::stoul(parentProcessIdValue, nullptr, 0));
+        }
+    } catch (...) {
+        return;
+    }
 
-    } while (Process32NextW(snapshot, &processEntry));
+    ProcessEvidence data;
 
-    CloseHandle(snapshot);
+    data.processId = processId;
+    data.parentProcessId = parentProcessId;
 
-    return evidence;
+    data.processName = wideToUtf8(processNameValue);
+
+    data.processPath = wideToUtf8(processNameValue);
+
+    data.parentProcessName = wideToUtf8(parentProcessNameValue);
+
+    data.commandLine = wideToUtf8(commandLineValue);
+
+    data.username = wideToUtf8(targetUserNameValue);
+
+    Evidence evidence;
+
+    evidence.id = "process-" + std::to_string(evidence_.size());
+
+    evidence.type = EvidenceType::Process;
+
+    evidence.source = "Windows Security";
+
+    evidence.timestamp = extractTimestamp(xml);
+
+    evidence.description = "Process created: " + data.processName;
+
+    evidence.data = data;
+
+    evidence.raw = wideToUtf8(xml);
+
+    evidence_.push_back(std::move(evidence));
 }

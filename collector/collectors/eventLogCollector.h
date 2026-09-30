@@ -1,8 +1,20 @@
 #pragma once
 
-#include "../core/Collector.h"
+#include <mutex>
+#include <string>
+#include <vector>
 
-class EventLogCollector : public Collector {
+#include "../models/evidence.h"
+
+class EventLogCollector {
    public:
-    std::vector<Evidence> collect() override;
+    std::vector<Evidence> collect();
+
+   private:
+    void collectChannel(const wchar_t* channel);
+
+    void handleEvent(void* eventHandle);
+
+    std::vector<Evidence> evidence_;
+    std::mutex mutex_;
 };

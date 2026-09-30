@@ -1,16 +1,13 @@
 #include "networkCollector.h"
 
-#include <iphlpapi.h>
 #include <windows.h>
-#include <winsock2.h>
-#include <ws2tcpip.h>
+#include <winevt.h>
 
 #include <iostream>
 #include <string>
 #include <vector>
 
-#pragma comment(lib, "iphlpapi.lib")
-#pragma comment(lib, "Ws2_32.lib")
+#pragma comment(lib, "wevtapi.lib")
 
 namespace {
 
@@ -36,291 +33,240 @@ std::string wideToUtf8(const std::wstring& value) {
     return result;
 }
 
-std::string getProcessName(DWORD pid) {
-    HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+std::wstring renderEvent(EVT_HANDLE event) {
+    DWORD bufferSize = 0;
+    DWORD bufferUsed = 0;
+    DWORD propertyCount = 0;
 
-    if (!process) {
-        return "Unknown";
+    EvtRender(nullptr, event, EvtRenderEventXml, 0, nullptr, &bufferSize,
+              &propertyCount);
+
+    if (GetLastError() != ERROR_INSUFFICIENT_BUFFER) {
+        return L"";
     }
 
-    wchar_t path[32768]{};
+    std::vector<wchar_t> buffer(bufferSize);
 
-    DWORD size = static_cast<DWORD>(std::size(path));
-
-    std::string result = "Unknown";
-
-    if (QueryFullProcessImageNameW(process, 0, path, &size)) {
-        std::wstring widePath(path, size);
-
-        size_t separator = widePath.find_last_of(L"\\/");
-
-        std::wstring filename = separator == std::wstring::npos
-                                    ? widePath
-                                    : widePath.substr(separator + 1);
-
-        result = wideToUtf8(filename);
+    if (!EvtRender(nullptr, event, EvtRenderEventXml, bufferSize, buffer.data(),
+                   &bufferUsed, &propertyCount)) {
+        return L"";
     }
 
-    CloseHandle(process);
-
-    return result;
+    return std::wstring(buffer.data());
 }
 
-std::string tcpStateToString(DWORD state) {
-    switch (state) {
-        case MIB_TCP_STATE_CLOSED:
-            return "CLOSED";
+std::wstring extractValue(const std::wstring& xml, const std::wstring& tag) {
+    std::wstring openTag = L"<" + tag + L">";
 
-        case MIB_TCP_STATE_LISTEN:
-            return "LISTEN";
+    std::wstring closeTag = L"</" + tag + L">";
 
-        case MIB_TCP_STATE_SYN_SENT:
-            return "SYN_SENT";
+    size_t start = xml.find(openTag);
 
-        case MIB_TCP_STATE_SYN_RCVD:
-            return "SYN_RECEIVED";
-
-        case MIB_TCP_STATE_ESTAB:
-            return "ESTABLISHED";
-
-        case MIB_TCP_STATE_FIN_WAIT1:
-            return "FIN_WAIT_1";
-
-        case MIB_TCP_STATE_FIN_WAIT2:
-            return "FIN_WAIT_2";
-
-        case MIB_TCP_STATE_CLOSE_WAIT:
-            return "CLOSE_WAIT";
-
-        case MIB_TCP_STATE_CLOSING:
-            return "CLOSING";
-
-        case MIB_TCP_STATE_LAST_ACK:
-            return "LAST_ACK";
-
-        case MIB_TCP_STATE_TIME_WAIT:
-            return "TIME_WAIT";
-
-        case MIB_TCP_STATE_DELETE_TCB:
-            return "DELETE_TCB";
-
-        default:
-            return "UNKNOWN";
+    if (start == std::wstring::npos) {
+        return L"";
     }
+
+    start += openTag.size();
+
+    size_t end = xml.find(closeTag, start);
+
+    if (end == std::wstring::npos) {
+        return L"";
+    }
+
+    return xml.substr(start, end - start);
 }
 
-std::string currentTimestamp() {
-    SYSTEMTIME time{};
+std::string extractTimestamp(const std::wstring& xml) {
+    const std::wstring singlePrefix = L"SystemTime='";
 
-    GetSystemTime(&time);
+    size_t start = xml.find(singlePrefix);
 
-    char buffer[64]{};
+    if (start != std::wstring::npos) {
+        start += singlePrefix.size();
 
-    snprintf(buffer, sizeof(buffer), "%04d-%02d-%02dT%02d:%02d:%02d.%03dZ",
-             time.wYear, time.wMonth, time.wDay, time.wHour, time.wMinute,
-             time.wSecond, time.wMilliseconds);
+        size_t end = xml.find(L"'", start);
 
-    return buffer;
+        if (end != std::wstring::npos) {
+            return wideToUtf8(xml.substr(start, end - start));
+        }
+    }
+
+    const std::wstring doublePrefix = L"SystemTime=\"";
+
+    start = xml.find(doublePrefix);
+
+    if (start != std::wstring::npos) {
+        start += doublePrefix.size();
+
+        size_t end = xml.find(L"\"", start);
+
+        if (end != std::wstring::npos) {
+            return wideToUtf8(xml.substr(start, end - start));
+        }
+    }
+
+    return "";
 }
 
-std::string ipv4ToString(DWORD address) {
-    IN_ADDR addr{};
+std::wstring extractDataValue(const std::wstring& xml,
+                              const std::wstring& name) {
+    std::wstring patterns[] = {L"<Data Name=\"" + name + L"\">",
+                               L"<Data Name='" + name + L"'>"};
 
-    addr.S_un.S_addr = address;
+    for (const auto& pattern : patterns) {
+        size_t start = xml.find(pattern);
 
-    char buffer[INET_ADDRSTRLEN]{};
+        if (start == std::wstring::npos) {
+            continue;
+        }
 
-    if (!inet_ntop(AF_INET, &addr, buffer, sizeof(buffer))) {
-        return "";
+        start += pattern.size();
+
+        size_t end = xml.find(L"</Data>", start);
+
+        if (end == std::wstring::npos) {
+            return L"";
+        }
+
+        return xml.substr(start, end - start);
     }
 
-    return buffer;
-}
-
-std::string ipv6ToString(const BYTE address[16]) {
-    IN6_ADDR addr{};
-
-    memcpy(&addr, address, sizeof(addr));
-
-    char buffer[INET6_ADDRSTRLEN]{};
-
-    if (!inet_ntop(AF_INET6, &addr, buffer, sizeof(buffer))) {
-        return "";
-    }
-
-    return buffer;
-}
-
-void collectIPv4(std::vector<Evidence>& evidence) {
-    DWORD size = 0;
-
-    DWORD result = GetExtendedTcpTable(nullptr, &size, FALSE, AF_INET,
-                                       TCP_TABLE_OWNER_PID_ALL, 0);
-
-    if (result != ERROR_INSUFFICIENT_BUFFER) {
-        return;
-    }
-
-    std::vector<BYTE> buffer(size);
-
-    auto* table = reinterpret_cast<PMIB_TCPTABLE_OWNER_PID>(buffer.data());
-
-    result = GetExtendedTcpTable(table, &size, FALSE, AF_INET,
-                                 TCP_TABLE_OWNER_PID_ALL, 0);
-
-    if (result != NO_ERROR) {
-        return;
-    }
-
-    for (DWORD i = 0; i < table->dwNumEntries; ++i) {
-        const auto& connection = table->table[i];
-
-        std::string localIp = ipv4ToString(connection.dwLocalAddr);
-
-        std::string remoteIp = ipv4ToString(connection.dwRemoteAddr);
-
-        uint16_t localPort =
-            ntohs(static_cast<u_short>(connection.dwLocalPort));
-
-        uint16_t remotePort =
-            ntohs(static_cast<u_short>(connection.dwRemotePort));
-
-        std::string process = getProcessName(connection.dwOwningPid);
-
-        std::string state = tcpStateToString(connection.dwState);
-
-        NetworkConnectionEvidence data;
-
-        data.processId = connection.dwOwningPid;
-
-        data.processName = process;
-
-        data.localIp = localIp;
-
-        data.localPort = localPort;
-
-        data.remoteIp = remoteIp;
-
-        data.remotePort = remotePort;
-
-        data.state = state;
-
-        Evidence item;
-
-        item.id = "network-" + std::to_string(evidence.size() + 1);
-
-        item.source = "Windows Network";
-
-        item.timestamp = currentTimestamp();
-
-        item.description =
-            process + " (" + std::to_string(connection.dwOwningPid) + ") " +
-            localIp + ":" + std::to_string(localPort) + " -> " + remoteIp +
-            ":" + std::to_string(remotePort) + " [" + state + "]";
-
-        item.raw =
-            "family=IPv4"
-            "; pid=" +
-            std::to_string(connection.dwOwningPid) + "; process=" + process +
-            "; local=" + localIp + ":" + std::to_string(localPort) +
-            "; remote=" + remoteIp + ":" + std::to_string(remotePort) +
-            "; state=" + state;
-
-        item.data = std::move(data);
-
-        evidence.push_back(std::move(item));
-    }
-}
-
-void collectIPv6(std::vector<Evidence>& evidence) {
-    DWORD size = 0;
-
-    DWORD result = GetExtendedTcpTable(nullptr, &size, FALSE, AF_INET6,
-                                       TCP_TABLE_OWNER_PID_ALL, 0);
-
-    if (result != ERROR_INSUFFICIENT_BUFFER) {
-        return;
-    }
-
-    std::vector<BYTE> buffer(size);
-
-    auto* table = reinterpret_cast<PMIB_TCP6TABLE_OWNER_PID>(buffer.data());
-
-    result = GetExtendedTcpTable(table, &size, FALSE, AF_INET6,
-                                 TCP_TABLE_OWNER_PID_ALL, 0);
-
-    if (result != NO_ERROR) {
-        return;
-    }
-
-    for (DWORD i = 0; i < table->dwNumEntries; ++i) {
-        const auto& connection = table->table[i];
-
-        std::string localIp = ipv6ToString(connection.ucLocalAddr);
-
-        std::string remoteIp = ipv6ToString(connection.ucRemoteAddr);
-
-        uint16_t localPort =
-            ntohs(static_cast<u_short>(connection.dwLocalPort));
-
-        uint16_t remotePort =
-            ntohs(static_cast<u_short>(connection.dwRemotePort));
-
-        std::string process = getProcessName(connection.dwOwningPid);
-
-        std::string state = tcpStateToString(connection.dwState);
-
-        NetworkConnectionEvidence data;
-
-        data.processId = connection.dwOwningPid;
-
-        data.processName = process;
-
-        data.localIp = localIp;
-
-        data.localPort = localPort;
-
-        data.remoteIp = remoteIp;
-
-        data.remotePort = remotePort;
-
-        data.state = state;
-
-        Evidence item;
-        item.type = EvidenceType::NetworkConnection;
-
-        item.id = "network-" + std::to_string(evidence.size() + 1);
-
-        item.source = "Windows Network";
-
-        item.timestamp = currentTimestamp();
-
-        item.description =
-            process + " (" + std::to_string(connection.dwOwningPid) + ") [" +
-            localIp + "]:" + std::to_string(localPort) + " -> [" + remoteIp +
-            "]:" + std::to_string(remotePort) + " [" + state + "]";
-
-        item.raw =
-            "family=IPv6"
-            "; pid=" +
-            std::to_string(connection.dwOwningPid) + "; process=" + process +
-            "; local=[" + localIp + "]:" + std::to_string(localPort) +
-            "; remote=[" + remoteIp + "]:" + std::to_string(remotePort) +
-            "; state=" + state;
-
-        item.data = std::move(data);
-
-        evidence.push_back(std::move(item));
-    }
+    return L"";
 }
 
 }  // namespace
 
 std::vector<Evidence> NetworkCollector::collect() {
-    std::vector<Evidence> evidence;
+    evidence_.clear();
 
-    collectIPv4(evidence);
-    collectIPv6(evidence);
+    std::cout << "[Network] Collecting historical network events...\n";
 
-    return evidence;
+    EVT_HANDLE query =
+        EvtQuery(nullptr, L"Security", L"*[System[(EventID=5156)]]",
+                 EvtQueryChannelPath);
+
+    if (!query) {
+        std::cerr << "[Network] EvtQuery failed: " << GetLastError() << '\n';
+
+        return evidence_;
+    }
+
+    while (true) {
+        EVT_HANDLE events[16];
+        DWORD returned = 0;
+
+        BOOL result = EvtNext(query, 16, events, INFINITE, 0, &returned);
+
+        if (!result) {
+            DWORD error = GetLastError();
+
+            if (error == ERROR_NO_MORE_ITEMS) {
+                break;
+            }
+
+            std::cerr << "[Network] EvtNext failed: " << error << '\n';
+
+            break;
+        }
+
+        for (DWORD i = 0; i < returned; ++i) {
+            handleEvent(events[i]);
+            EvtClose(events[i]);
+        }
+    }
+
+    EvtClose(query);
+
+    std::cout << "[Network] Collection complete. Events: " << evidence_.size()
+              << '\n';
+
+    return evidence_;
+}
+
+void NetworkCollector::handleEvent(void* eventHandle) {
+    EVT_HANDLE event = static_cast<EVT_HANDLE>(eventHandle);
+
+    std::wstring xml = renderEvent(event);
+
+    if (xml.empty()) {
+        return;
+    }
+
+    std::wstring processIdValue = extractDataValue(xml, L"ProcessID");
+
+    std::wstring sourcePortValue = extractDataValue(xml, L"SourcePort");
+
+    std::wstring destinationPortValue = extractDataValue(xml, L"DestPort");
+
+    std::string application = wideToUtf8(extractDataValue(xml, L"Application"));
+
+    std::string sourceAddress =
+        wideToUtf8(extractDataValue(xml, L"SourceAddress"));
+
+    std::string destinationAddress =
+        wideToUtf8(extractDataValue(xml, L"DestAddress"));
+
+    std::string protocol = wideToUtf8(extractDataValue(xml, L"Protocol"));
+
+    if (application.empty() && sourceAddress.empty() &&
+        destinationAddress.empty()) {
+        return;
+    }
+
+    uint32_t processId = 0;
+    uint16_t sourcePort = 0;
+    uint16_t destinationPort = 0;
+
+    try {
+        if (!processIdValue.empty()) {
+            processId = static_cast<uint32_t>(std::stoul(processIdValue));
+        }
+
+        if (!sourcePortValue.empty()) {
+            sourcePort = static_cast<uint16_t>(std::stoul(sourcePortValue));
+        }
+
+        if (!destinationPortValue.empty()) {
+            destinationPort =
+                static_cast<uint16_t>(std::stoul(destinationPortValue));
+        }
+    } catch (...) {
+        return;
+    }
+
+    NetworkConnectionEvidence data;
+
+    data.processId = processId;
+
+    data.processName = application;
+
+    data.localIp = sourceAddress;
+
+    data.localPort = sourcePort;
+
+    data.remoteIp = destinationAddress;
+
+    data.remotePort = destinationPort;
+
+    data.state = protocol;
+
+    Evidence evidence;
+
+    evidence.id = "network-" + std::to_string(evidence_.size());
+
+    evidence.type = EvidenceType::NetworkConnection;
+
+    evidence.source = "Windows Security";
+
+    evidence.timestamp = extractTimestamp(xml);
+
+    evidence.description =
+        "Network connection: " + data.processName + " -> " + data.remoteIp;
+
+    evidence.data = data;
+
+    evidence.raw = wideToUtf8(xml);
+
+    evidence_.push_back(std::move(evidence));
 }

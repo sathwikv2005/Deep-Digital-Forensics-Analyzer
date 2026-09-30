@@ -1,8 +1,16 @@
 #pragma once
 
-#include "../core/collector.h"
+#include <string>
+#include <vector>
 
-class NetworkCollector : public Collector {
+#include "../models/evidence.h"
+
+class NetworkCollector {
    public:
-    std::vector<Evidence> collect() override;
+    std::vector<Evidence> collect();
+
+   private:
+    void handleEvent(void* eventHandle);
+
+    std::vector<Evidence> evidence_;
 };
