@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <string>
 
 class BehaviorScorer {
@@ -12,4 +13,7 @@ class BehaviorScorer {
 
     static double combinationBonus(bool suspiciousProcess, bool suspiciousPath,
                                    bool networkActivity, bool downloadActivity);
+
+    static double processTreeScore(const std::string& parent,
+                                   const std::string& child);
 };

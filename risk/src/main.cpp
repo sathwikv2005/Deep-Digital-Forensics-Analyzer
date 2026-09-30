@@ -5,6 +5,7 @@
 #include "executionPathRule.h"
 #include "networkRule.h"
 #include "processRule.h"
+#include "processTreeRule.h"
 #include "riskEngine.h"
 
 #define TIMELINE_PATH "..\\output\\constructor_output\\timeline.json"
@@ -19,6 +20,8 @@ int main() {
         RiskEngine engine(TIMELINE_PATH, CORRELATION_PATH);
 
         engine.addRule(std::make_unique<ProcessRule>());
+
+        engine.addRule(std::make_unique<ProcessTreeRule>());
 
         engine.addRule(std::make_unique<ExecutionPathRule>());
 

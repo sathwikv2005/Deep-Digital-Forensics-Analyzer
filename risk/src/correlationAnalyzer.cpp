@@ -9,8 +9,9 @@ namespace {
 void addUnique(std::vector<std::string>& values, const std::string& value) {
     if (value.empty()) return;
 
-    if (std::find(values.begin(), values.end(), value) == values.end())
+    if (std::find(values.begin(), values.end(), value) == values.end()) {
         values.push_back(value);
+    }
 }
 
 void extractProcessIndicators(const std::vector<std::string>& indicators,
@@ -32,7 +33,9 @@ std::vector<CorrelationActivity> CorrelationAnalyzer::analyze(
     const nlohmann::json& timeline, const nlohmann::json& correlations) {
     std::vector<CorrelationActivity> activities;
 
-    if (!timeline.is_array() || !correlations.is_array()) return activities;
+    if (!timeline.is_array() || !correlations.is_array()) {
+        return activities;
+    }
 
     std::unordered_map<std::string, nlohmann::json> events;
 
@@ -77,11 +80,15 @@ std::vector<CorrelationActivity> CorrelationAnalyzer::analyze(
 
             if (category == "BrowserDownload") ++activity.downloadEvents;
 
-            if (!event.contains("data") || !event["data"].is_object()) continue;
+            if (!event.contains("data") || !event["data"].is_object()) {
+                continue;
+            }
 
             const auto& data = event["data"];
 
-            if (!data.contains("data") || !data["data"].is_object()) continue;
+            if (!data.contains("data") || !data["data"].is_object()) {
+                continue;
+            }
 
             const auto& eventData = data["data"];
 
@@ -89,6 +96,12 @@ std::vector<CorrelationActivity> CorrelationAnalyzer::analyze(
                 eventData["processName"].is_string()) {
                 addUnique(activity.processes,
                           eventData["processName"].get<std::string>());
+            }
+
+            if (eventData.contains("parentProcessName") &&
+                eventData["parentProcessName"].is_string()) {
+                addUnique(activity.parentProcesses,
+                          eventData["parentProcessName"].get<std::string>());
             }
 
             if (eventData.contains("processPath") &&

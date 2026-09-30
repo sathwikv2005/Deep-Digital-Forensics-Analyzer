@@ -1,9 +1,5 @@
 #include "executionPathRule.h"
 
-#include <algorithm>
-#include <cctype>
-#include <string>
-
 #include "behaviorScorer.h"
 
 std::vector<RiskSignal> ExecutionPathRule::evaluate(
@@ -12,6 +8,7 @@ std::vector<RiskSignal> ExecutionPathRule::evaluate(
 
     for (const auto& activity : context.activities) {
         double bestScore = 0.0;
+
         std::string bestPath;
 
         for (const auto& path : activity.paths) {
@@ -49,6 +46,16 @@ std::vector<RiskSignal> ExecutionPathRule::evaluate(
             "Executable or file activity originated "
             "from a user-writable application data "
             "or temporary location.");
+
+        if (activity.networkEvents > 0) {
+            signal.score += 15.0;
+
+            signal.confidence = 0.90;
+
+            signal.reasons.push_back(
+                "Executable activity from a user-writable "
+                "location is associated with network communication.");
+        }
 
         signals.push_back(std::move(signal));
     }

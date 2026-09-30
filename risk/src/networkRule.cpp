@@ -39,6 +39,16 @@ std::vector<RiskSignal> NetworkRule::evaluate(
                 "within the correlated activity.");
         }
 
+        if (activity.sources.size() >= 2) {
+            signal.score += 5.0;
+
+            signal.confidence = 0.75;
+
+            signal.reasons.push_back(
+                "Network activity was correlated "
+                "across multiple forensic sources.");
+        }
+
         signals.push_back(std::move(signal));
     }
 

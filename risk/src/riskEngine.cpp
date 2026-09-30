@@ -5,6 +5,10 @@
 #include <stdexcept>
 
 #include "correlationAnalyzer.h"
+#include "executionPathRule.h"
+#include "networkRule.h"
+#include "processRule.h"
+#include "processTreeRule.h"
 #include "riskAggregator.h"
 
 using json = nlohmann::json;

@@ -11,13 +11,19 @@ struct CorrelationActivity {
     long long endTime = 0;
 
     std::vector<std::string> eventIds;
+
     std::vector<std::string> indicators;
+
     std::vector<std::string> sources;
 
     std::vector<std::string> processes;
+
+    std::vector<std::string> parentProcesses;
+
     std::vector<std::string> paths;
 
     size_t networkEvents = 0;
+
     size_t downloadEvents = 0;
 };
 
