@@ -19,13 +19,13 @@ std::string lower(std::string value) {
 double BehaviorScorer::processScore(const std::string& process) {
     const std::string name = lower(process);
 
-    if (name == "powershell.exe" || name == "pwsh.exe") return 30.0;
+    if (name == "powershell.exe" || name == "pwsh.exe") return 40.0;
 
     if (name == "cmd.exe" || name == "wscript.exe" || name == "cscript.exe" ||
         name == "mshta.exe" || name == "rundll32.exe" || name == "regsvr32.exe")
-        return 25.0;
+        return 35.0;
 
-    if (name == "python.exe" || name == "python3.exe") return 10.0;
+    if (name == "python.exe" || name == "python3.exe") return 30.0;
 
     return 0.0;
 }
@@ -61,15 +61,15 @@ double BehaviorScorer::combinationBonus(bool suspiciousProcess,
                                         bool downloadActivity) {
     double score = 0.0;
 
-    if (suspiciousProcess && networkActivity) score += 10.0;
+    if (suspiciousProcess && networkActivity) score += 27.0;
 
-    if (suspiciousProcess && suspiciousPath) score += 15.0;
+    if (suspiciousProcess && suspiciousPath) score += 25.0;
 
-    if (suspiciousPath && networkActivity) score += 10.0;
+    if (suspiciousPath && networkActivity) score += 22.0;
 
-    if (downloadActivity && suspiciousProcess) score += 15.0;
+    if (downloadActivity && suspiciousProcess) score += 25.0;
 
-    if (downloadActivity && suspiciousPath && networkActivity) score += 20.0;
+    if (downloadActivity && suspiciousPath && networkActivity) score += 50.0;
 
     return score;
 }

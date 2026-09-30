@@ -9,8 +9,20 @@ namespace {
 void addUnique(std::vector<std::string>& values, const std::string& value) {
     if (value.empty()) return;
 
-    if (std::find(values.begin(), values.end(), value) == values.end()) {
+    if (std::find(values.begin(), values.end(), value) == values.end())
         values.push_back(value);
+}
+
+void extractProcessIndicators(const std::vector<std::string>& indicators,
+                              std::vector<std::string>& processes) {
+    const std::string prefix = "process:";
+
+    for (const auto& indicator : indicators) {
+        if (indicator.rfind(prefix, 0) != 0) continue;
+
+        const std::string process = indicator.substr(prefix.size());
+
+        addUnique(processes, process);
     }
 }
 
@@ -31,11 +43,11 @@ std::vector<CorrelationActivity> CorrelationAnalyzer::analyze(
     }
 
     for (const auto& correlation : correlations) {
-        if (correlation.value("type", "") != "CROSS_SOURCE_ACTIVITY") continue;
-
         CorrelationActivity activity;
 
         activity.id = correlation.value("id", "");
+
+        if (activity.id.empty()) continue;
 
         activity.startTime = correlation.value("startTime", 0LL);
 
@@ -50,6 +62,8 @@ std::vector<CorrelationActivity> CorrelationAnalyzer::analyze(
         activity.sources =
             correlation.value("sources", std::vector<std::string>{});
 
+        extractProcessIndicators(activity.indicators, activity.processes);
+
         for (const auto& eventId : activity.eventIds) {
             auto it = events.find(eventId);
 
@@ -59,13 +73,9 @@ std::vector<CorrelationActivity> CorrelationAnalyzer::analyze(
 
             const std::string category = event.value("category", "");
 
-            if (category == "NetworkConnection") {
-                ++activity.networkEvents;
-            }
+            if (category == "NetworkConnection") ++activity.networkEvents;
 
-            if (category == "BrowserDownload") {
-                ++activity.downloadEvents;
-            }
+            if (category == "BrowserDownload") ++activity.downloadEvents;
 
             if (!event.contains("data") || !event["data"].is_object()) continue;
 
@@ -85,6 +95,28 @@ std::vector<CorrelationActivity> CorrelationAnalyzer::analyze(
                 eventData["processPath"].is_string()) {
                 addUnique(activity.paths,
                           eventData["processPath"].get<std::string>());
+            }
+
+            if (eventData.contains("path") && eventData["path"].is_string()) {
+                addUnique(activity.paths, eventData["path"].get<std::string>());
+            }
+
+            if (eventData.contains("filePath") &&
+                eventData["filePath"].is_string()) {
+                addUnique(activity.paths,
+                          eventData["filePath"].get<std::string>());
+            }
+
+            if (eventData.contains("executable") &&
+                eventData["executable"].is_string()) {
+                addUnique(activity.paths,
+                          eventData["executable"].get<std::string>());
+            }
+
+            if (eventData.contains("imagePath") &&
+                eventData["imagePath"].is_string()) {
+                addUnique(activity.paths,
+                          eventData["imagePath"].get<std::string>());
             }
         }
 

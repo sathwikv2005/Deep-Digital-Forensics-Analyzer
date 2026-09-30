@@ -17,8 +17,8 @@ std::string RiskScorer::severity(double score) {
 double RiskScorer::combine(double processScore, double executionScore,
                            double networkScore, double rarityScore,
                            double behaviorScore) {
-    double score = processScore + executionScore + networkScore + rarityScore +
-                   behaviorScore;
+    const double score = processScore + executionScore + networkScore +
+                         rarityScore + behaviorScore;
 
     return std::clamp(score, 0.0, 100.0);
 }

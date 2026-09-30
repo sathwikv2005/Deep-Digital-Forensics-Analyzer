@@ -6,14 +6,26 @@
 
 #include "riskScorer.h"
 
+namespace {
+
+void addUnique(std::vector<std::string>& values, const std::string& value) {
+    if (value.empty()) return;
+
+    if (std::find(values.begin(), values.end(), value) == values.end()) {
+        values.push_back(value);
+    }
+}
+
+}  // namespace
+
 std::vector<RiskFinding> RiskAggregator::aggregate(
     const RiskContext& context, const std::vector<RiskSignal>& signals) const {
     std::map<std::string, RiskFinding> grouped;
 
     for (const auto& signal : signals) {
-        std::string key = signal.correlationId;
+        if (signal.correlationId.empty()) continue;
 
-        if (key.empty()) continue;
+        const std::string& key = signal.correlationId;
 
         auto& finding = grouped[key];
 
@@ -36,31 +48,19 @@ std::vector<RiskFinding> RiskAggregator::aggregate(
         }
 
         for (const auto& eventId : signal.eventIds) {
-            if (std::find(finding.eventIds.begin(), finding.eventIds.end(),
-                          eventId) == finding.eventIds.end()) {
-                finding.eventIds.push_back(eventId);
-            }
+            addUnique(finding.eventIds, eventId);
         }
 
         for (const auto& indicator : signal.indicators) {
-            if (std::find(finding.indicators.begin(), finding.indicators.end(),
-                          indicator) == finding.indicators.end()) {
-                finding.indicators.push_back(indicator);
-            }
+            addUnique(finding.indicators, indicator);
         }
 
         for (const auto& source : signal.sources) {
-            if (std::find(finding.sources.begin(), finding.sources.end(),
-                          source) == finding.sources.end()) {
-                finding.sources.push_back(source);
-            }
+            addUnique(finding.sources, source);
         }
 
         for (const auto& reason : signal.reasons) {
-            if (std::find(finding.reasons.begin(), finding.reasons.end(),
-                          reason) == finding.reasons.end()) {
-                finding.reasons.push_back(reason);
-            }
+            addUnique(finding.reasons, reason);
         }
     }
 
@@ -73,6 +73,13 @@ std::vector<RiskFinding> RiskAggregator::aggregate(
 
         findings.push_back(std::move(finding));
     }
+
+    std::sort(findings.begin(), findings.end(),
+              [](const RiskFinding& a, const RiskFinding& b) {
+                  if (a.score != b.score) return a.score > b.score;
+
+                  return a.startTime < b.startTime;
+              });
 
     return findings;
 }

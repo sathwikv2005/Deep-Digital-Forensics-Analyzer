@@ -33,6 +33,7 @@ int main() {
         std::cout << "Generated " << findings.size() << " risk findings.\n";
 
         std::cout << "Output: " << OUTPUT_PATH << '\n';
+
     } catch (const std::exception& e) {
         std::cerr << "Risk engine error: " << e.what() << '\n';
 

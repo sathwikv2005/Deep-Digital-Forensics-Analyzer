@@ -4,6 +4,8 @@
 #include <cctype>
 #include <string>
 
+#include "behaviorScorer.h"
+
 namespace {
 
 std::string lower(std::string value) {
@@ -14,20 +16,6 @@ std::string lower(std::string value) {
     return value;
 }
 
-double scoreProcess(const std::string& process) {
-    const std::string name = lower(process);
-
-    if (name == "powershell.exe" || name == "pwsh.exe") return 30.0;
-
-    if (name == "cmd.exe" || name == "wscript.exe" || name == "cscript.exe" ||
-        name == "mshta.exe" || name == "rundll32.exe" || name == "regsvr32.exe")
-        return 25.0;
-
-    if (name == "python.exe" || name == "python3.exe") return 10.0;
-
-    return 0.0;
-}
-
 }  // namespace
 
 std::vector<RiskSignal> ProcessRule::evaluate(
@@ -35,41 +23,128 @@ std::vector<RiskSignal> ProcessRule::evaluate(
     std::vector<RiskSignal> signals;
 
     for (const auto& activity : context.activities) {
+        double bestProcessScore = 0.0;
+        std::string bestProcess;
+
         for (const auto& process : activity.processes) {
-            const double score = scoreProcess(process);
+            const double score = BehaviorScorer::processScore(process);
 
-            if (score <= 0.0) continue;
+            if (score > bestProcessScore) {
+                bestProcessScore = score;
+                bestProcess = process;
+            }
+        }
 
-            RiskSignal signal;
+        double bestPathScore = 0.0;
+        std::string bestPath;
 
-            signal.correlationId = activity.id;
+        for (const auto& path : activity.paths) {
+            const double score = BehaviorScorer::pathScore(path);
 
-            signal.type = "PROCESS_CONTEXT";
+            if (score > bestPathScore) {
+                bestPathScore = score;
+                bestPath = path;
+            }
+        }
 
-            signal.score = score;
+        const double networkScore =
+            BehaviorScorer::networkScore(activity.networkEvents);
 
-            signal.confidence = 0.8;
+        const bool suspiciousProcess = bestProcessScore > 0.0;
 
-            signal.startTime = activity.startTime;
+        const bool suspiciousPath = bestPathScore > 0.0;
 
-            signal.endTime = activity.endTime;
+        const bool networkActivity = activity.networkEvents > 0;
 
-            signal.eventIds = activity.eventIds;
+        const bool downloadActivity = activity.downloadEvents > 0;
 
-            signal.indicators.push_back("process:" + process);
+        const double combinationScore =
+            BehaviorScorer::combinationBonus(suspiciousProcess, suspiciousPath,
+                                             networkActivity, downloadActivity);
 
-            signal.sources = activity.sources;
+        const double totalScore =
+            bestProcessScore + bestPathScore + networkScore + combinationScore;
 
-            if (score >= 25.0) {
+        if (totalScore <= 0.0) continue;
+
+        RiskSignal signal;
+
+        signal.correlationId = activity.id;
+
+        signal.type = "BEHAVIORAL_ACTIVITY";
+
+        signal.score = totalScore;
+
+        signal.confidence = 0.75;
+
+        if (suspiciousProcess) signal.confidence = 0.85;
+
+        if (suspiciousProcess && networkActivity) signal.confidence = 0.90;
+
+        signal.startTime = activity.startTime;
+
+        signal.endTime = activity.endTime;
+
+        signal.eventIds = activity.eventIds;
+
+        signal.sources = activity.sources;
+
+        signal.indicators = activity.indicators;
+
+        if (suspiciousProcess) {
+            signal.indicators.push_back("process:" + bestProcess);
+
+            if (bestProcessScore >= 35.0) {
                 signal.reasons.push_back(
-                    "Process is capable of script or command execution.");
+                    "Process is capable of "
+                    "script, command, or proxy execution.");
             } else {
                 signal.reasons.push_back(
-                    "Process can execute application-controlled code.");
+                    "Process can execute "
+                    "application-controlled code.");
             }
-
-            signals.push_back(std::move(signal));
         }
+
+        if (suspiciousPath) {
+            signal.indicators.push_back("path:" + bestPath);
+
+            signal.reasons.push_back(
+                "Executable or file activity originated "
+                "from a user-writable application data "
+                "or temporary location.");
+        }
+
+        if (networkActivity) {
+            signal.reasons.push_back(
+                "Process activity is associated "
+                "with network activity.");
+        }
+
+        if (downloadActivity) {
+            signal.reasons.push_back(
+                "Browser or application download "
+                "activity is associated with this activity.");
+        }
+
+        if (suspiciousProcess && networkActivity) {
+            signal.reasons.push_back(
+                "Suspicious process activity is "
+                "associated with network communication.");
+        }
+
+        if (suspiciousProcess && suspiciousPath) {
+            signal.reasons.push_back(
+                "Suspicious process execution is "
+                "associated with a user-writable path.");
+        }
+
+        if (downloadActivity && suspiciousProcess) {
+            signal.reasons.push_back(
+                "A potentially executable process "
+                "is associated with download activity.");
+        }
+
+        signals.push_back(std::move(signal));
     }
 
     return signals;

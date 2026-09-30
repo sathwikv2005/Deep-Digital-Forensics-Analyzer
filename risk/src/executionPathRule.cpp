@@ -4,78 +4,51 @@
 #include <cctype>
 #include <string>
 
-namespace {
-
-std::string lower(std::string value) {
-    std::transform(
-        value.begin(), value.end(), value.begin(),
-        [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
-
-    return value;
-}
-
-double pathScore(const std::string& path) {
-    const std::string value = lower(path);
-
-    if (value.find("\\appdata\\local\\temp\\") != std::string::npos)
-        return 30.0;
-
-    if (value.find("\\temp\\") != std::string::npos) return 30.0;
-
-    if (value.find("\\appdata\\roaming\\") != std::string::npos) return 20.0;
-
-    if (value.find("\\appdata\\local\\") != std::string::npos) return 15.0;
-
-    return 0.0;
-}
-
-}  // namespace
+#include "behaviorScorer.h"
 
 std::vector<RiskSignal> ExecutionPathRule::evaluate(
     const RiskContext& context) const {
     std::vector<RiskSignal> signals;
 
-    if (!context.timeline.is_array()) return signals;
+    for (const auto& activity : context.activities) {
+        double bestScore = 0.0;
+        std::string bestPath;
 
-    for (const auto& event : context.timeline) {
-        const std::string category = event.value("category", "");
+        for (const auto& path : activity.paths) {
+            const double score = BehaviorScorer::pathScore(path);
 
-        if (category != "Process" && category != "File") continue;
-
-        const std::string description = event.value("description", "");
-
-        const auto raw = event.value("raw", nlohmann::json{});
-
-        std::string path = description;
-
-        if (raw.is_object()) {
-            for (const auto& key :
-                 {"path", "file", "filePath", "executable", "imagePath"}) {
-                if (raw.contains(key) && raw[key].is_string()) {
-                    path = raw[key].get<std::string>();
-
-                    break;
-                }
+            if (score > bestScore) {
+                bestScore = score;
+                bestPath = path;
             }
         }
 
-        const double score = pathScore(path);
-
-        if (score <= 0.0) continue;
+        if (bestScore <= 0.0) continue;
 
         RiskSignal signal;
 
+        signal.correlationId = activity.id;
+
         signal.type = "EXECUTION_PATH";
 
-        signal.score = score;
+        signal.score = bestScore;
 
         signal.confidence = 0.75;
 
-        signal.indicators.push_back(path);
+        signal.startTime = activity.startTime;
+
+        signal.endTime = activity.endTime;
+
+        signal.eventIds = activity.eventIds;
+
+        signal.sources = activity.sources;
+
+        signal.indicators.push_back("path:" + bestPath);
 
         signal.reasons.push_back(
             "Executable or file activity originated "
-            "from a user-writable application data location.");
+            "from a user-writable application data "
+            "or temporary location.");
 
         signals.push_back(std::move(signal));
     }
