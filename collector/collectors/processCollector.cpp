@@ -55,28 +55,6 @@ std::wstring renderEvent(EVT_HANDLE event) {
     return std::wstring(buffer.data());
 }
 
-std::wstring extractValue(const std::wstring& xml, const std::wstring& tag) {
-    std::wstring openTag = L"<" + tag + L">";
-
-    std::wstring closeTag = L"</" + tag + L">";
-
-    size_t start = xml.find(openTag);
-
-    if (start == std::wstring::npos) {
-        return L"";
-    }
-
-    start += openTag.size();
-
-    size_t end = xml.find(closeTag, start);
-
-    if (end == std::wstring::npos) {
-        return L"";
-    }
-
-    return xml.substr(start, end - start);
-}
-
 std::string extractTimestamp(const std::wstring& xml) {
     const std::wstring singlePrefix = L"SystemTime='";
 
@@ -111,28 +89,85 @@ std::string extractTimestamp(const std::wstring& xml) {
 
 std::wstring extractDataValue(const std::wstring& xml,
                               const std::wstring& name) {
-    std::wstring patterns[] = {L"<Data Name=\"" + name + L"\">",
-                               L"<Data Name='" + name + L"'>"};
+    size_t searchPosition = 0;
 
-    for (const auto& pattern : patterns) {
-        size_t start = xml.find(pattern);
+    while (true) {
+        size_t dataStart = xml.find(L"<Data", searchPosition);
 
-        if (start == std::wstring::npos) {
-            continue;
-        }
-
-        start += pattern.size();
-
-        size_t end = xml.find(L"</Data>", start);
-
-        if (end == std::wstring::npos) {
+        if (dataStart == std::wstring::npos) {
             return L"";
         }
 
-        return xml.substr(start, end - start);
+        size_t dataTagEnd = xml.find(L">", dataStart);
+
+        if (dataTagEnd == std::wstring::npos) {
+            return L"";
+        }
+
+        std::wstring openingTag =
+            xml.substr(dataStart, dataTagEnd - dataStart + 1);
+
+        size_t namePosition = openingTag.find(L"Name");
+
+        if (namePosition != std::wstring::npos) {
+            size_t equalsPosition = openingTag.find(L"=", namePosition);
+
+            if (equalsPosition != std::wstring::npos) {
+                size_t quotePosition = equalsPosition + 1;
+
+                while (quotePosition < openingTag.size() &&
+                       (openingTag[quotePosition] == L' ' ||
+                        openingTag[quotePosition] == L'\t')) {
+                    ++quotePosition;
+                }
+
+                if (quotePosition < openingTag.size() &&
+                    (openingTag[quotePosition] == L'"' ||
+                     openingTag[quotePosition] == L'\'')) {
+                    wchar_t quote = openingTag[quotePosition];
+
+                    size_t valueStart = quotePosition + 1;
+
+                    size_t valueEnd = openingTag.find(quote, valueStart);
+
+                    if (valueEnd != std::wstring::npos) {
+                        std::wstring fieldName = openingTag.substr(
+                            valueStart, valueEnd - valueStart);
+
+                        if (fieldName == name) {
+                            size_t valueStartXml = dataTagEnd + 1;
+
+                            size_t valueEndXml =
+                                xml.find(L"</Data>", valueStartXml);
+
+                            if (valueEndXml == std::wstring::npos) {
+                                return L"";
+                            }
+
+                            return xml.substr(valueStartXml,
+                                              valueEndXml - valueStartXml);
+                        }
+                    }
+                }
+            }
+        }
+
+        searchPosition = dataTagEnd + 1;
+    }
+}
+
+uint32_t parseProcessId(const std::wstring& value) {
+    if (value.empty()) {
+        return 0;
     }
 
-    return L"";
+    try {
+        unsigned long long result = std::stoull(value, nullptr, 0);
+
+        return static_cast<uint32_t>(result);
+    } catch (...) {
+        return 0;
+    }
 }
 
 }  // namespace
@@ -193,54 +228,45 @@ void ProcessCollector::handleEvent(void* eventHandle) {
         return;
     }
 
-    std::wstring processIdValue = extractDataValue(xml, L"NewProcessId");
-
-    std::wstring parentProcessIdValue = extractDataValue(xml, L"ProcessId");
+    std::wstring newProcessIdValue = extractDataValue(xml, L"NewProcessId");
 
     std::wstring processNameValue = extractDataValue(xml, L"NewProcessName");
 
-    std::wstring parentProcessNameValue =
-        extractDataValue(xml, L"ParentProcessName");
+    std::wstring creatorProcessIdValue =
+        extractDataValue(xml, L"CreatorProcessId");
+
+    std::wstring creatorProcessNameValue =
+        extractDataValue(xml, L"CreatorProcessName");
 
     std::wstring commandLineValue = extractDataValue(xml, L"CommandLine");
 
-    std::wstring targetUserNameValue = extractDataValue(xml, L"TargetUserName");
+    std::wstring usernameValue = extractDataValue(xml, L"SubjectUserName");
 
     if (processNameValue.empty()) {
+        std::cerr << "[Process] Failed to extract NewProcessName\n";
+
         return;
     }
 
-    uint32_t processId = 0;
-    uint32_t parentProcessId = 0;
+    uint32_t processId = parseProcessId(newProcessIdValue);
 
-    try {
-        if (!processIdValue.empty()) {
-            processId =
-                static_cast<uint32_t>(std::stoul(processIdValue, nullptr, 0));
-        }
-
-        if (!parentProcessIdValue.empty()) {
-            parentProcessId = static_cast<uint32_t>(
-                std::stoul(parentProcessIdValue, nullptr, 0));
-        }
-    } catch (...) {
-        return;
-    }
+    uint32_t parentProcessId = parseProcessId(creatorProcessIdValue);
 
     ProcessEvidence data;
 
     data.processId = processId;
+
     data.parentProcessId = parentProcessId;
 
     data.processName = wideToUtf8(processNameValue);
 
-    data.processPath = wideToUtf8(processNameValue);
+    data.processPath = data.processName;
 
-    data.parentProcessName = wideToUtf8(parentProcessNameValue);
+    data.parentProcessName = wideToUtf8(creatorProcessNameValue);
 
     data.commandLine = wideToUtf8(commandLineValue);
 
-    data.username = wideToUtf8(targetUserNameValue);
+    data.username = wideToUtf8(usernameValue);
 
     Evidence evidence;
 

@@ -55,28 +55,6 @@ std::wstring renderEvent(EVT_HANDLE event) {
     return std::wstring(buffer.data());
 }
 
-std::wstring extractValue(const std::wstring& xml, const std::wstring& tag) {
-    std::wstring openTag = L"<" + tag + L">";
-
-    std::wstring closeTag = L"</" + tag + L">";
-
-    size_t start = xml.find(openTag);
-
-    if (start == std::wstring::npos) {
-        return L"";
-    }
-
-    start += openTag.size();
-
-    size_t end = xml.find(closeTag, start);
-
-    if (end == std::wstring::npos) {
-        return L"";
-    }
-
-    return xml.substr(start, end - start);
-}
-
 std::string extractTimestamp(const std::wstring& xml) {
     const std::wstring singlePrefix = L"SystemTime='";
 
@@ -111,28 +89,99 @@ std::string extractTimestamp(const std::wstring& xml) {
 
 std::wstring extractDataValue(const std::wstring& xml,
                               const std::wstring& name) {
-    std::wstring patterns[] = {L"<Data Name=\"" + name + L"\">",
-                               L"<Data Name='" + name + L"'>"};
+    size_t searchPosition = 0;
 
-    for (const auto& pattern : patterns) {
-        size_t start = xml.find(pattern);
+    while (true) {
+        size_t dataStart = xml.find(L"<Data", searchPosition);
 
-        if (start == std::wstring::npos) {
-            continue;
-        }
-
-        start += pattern.size();
-
-        size_t end = xml.find(L"</Data>", start);
-
-        if (end == std::wstring::npos) {
+        if (dataStart == std::wstring::npos) {
             return L"";
         }
 
-        return xml.substr(start, end - start);
+        size_t dataTagEnd = xml.find(L">", dataStart);
+
+        if (dataTagEnd == std::wstring::npos) {
+            return L"";
+        }
+
+        std::wstring openingTag =
+            xml.substr(dataStart, dataTagEnd - dataStart + 1);
+
+        size_t namePosition = openingTag.find(L"Name");
+
+        if (namePosition != std::wstring::npos) {
+            size_t equalsPosition = openingTag.find(L"=", namePosition);
+
+            if (equalsPosition != std::wstring::npos) {
+                size_t quotePosition = equalsPosition + 1;
+
+                while (quotePosition < openingTag.size() &&
+                       (openingTag[quotePosition] == L' ' ||
+                        openingTag[quotePosition] == L'\t')) {
+                    ++quotePosition;
+                }
+
+                if (quotePosition < openingTag.size() &&
+                    (openingTag[quotePosition] == L'"' ||
+                     openingTag[quotePosition] == L'\'')) {
+                    wchar_t quote = openingTag[quotePosition];
+
+                    size_t valueStart = quotePosition + 1;
+
+                    size_t valueEnd = openingTag.find(quote, valueStart);
+
+                    if (valueEnd != std::wstring::npos) {
+                        std::wstring fieldName = openingTag.substr(
+                            valueStart, valueEnd - valueStart);
+
+                        if (fieldName == name) {
+                            size_t valueStartXml = dataTagEnd + 1;
+
+                            size_t valueEndXml =
+                                xml.find(L"</Data>", valueStartXml);
+
+                            if (valueEndXml == std::wstring::npos) {
+                                return L"";
+                            }
+
+                            return xml.substr(valueStartXml,
+                                              valueEndXml - valueStartXml);
+                        }
+                    }
+                }
+            }
+        }
+
+        searchPosition = dataTagEnd + 1;
+    }
+}
+
+uint32_t parseUInt32(const std::wstring& value) {
+    if (value.empty()) {
+        return 0;
     }
 
-    return L"";
+    try {
+        unsigned long long result = std::stoull(value, nullptr, 0);
+
+        return static_cast<uint32_t>(result);
+    } catch (...) {
+        return 0;
+    }
+}
+
+uint16_t parseUInt16(const std::wstring& value) {
+    if (value.empty()) {
+        return 0;
+    }
+
+    try {
+        unsigned long long result = std::stoull(value, nullptr, 0);
+
+        return static_cast<uint16_t>(result);
+    } catch (...) {
+        return 0;
+    }
 }
 
 }  // namespace
@@ -193,11 +242,13 @@ void NetworkCollector::handleEvent(void* eventHandle) {
         return;
     }
 
-    std::wstring processIdValue = extractDataValue(xml, L"ProcessID");
+    std::wstring processIdValue = extractDataValue(xml, L"ProcessId");
 
     std::wstring sourcePortValue = extractDataValue(xml, L"SourcePort");
 
     std::wstring destinationPortValue = extractDataValue(xml, L"DestPort");
+
+    std::wstring protocolValue = extractDataValue(xml, L"Protocol");
 
     std::string application = wideToUtf8(extractDataValue(xml, L"Application"));
 
@@ -207,33 +258,20 @@ void NetworkCollector::handleEvent(void* eventHandle) {
     std::string destinationAddress =
         wideToUtf8(extractDataValue(xml, L"DestAddress"));
 
-    std::string protocol = wideToUtf8(extractDataValue(xml, L"Protocol"));
+    std::string protocol = wideToUtf8(protocolValue);
 
     if (application.empty() && sourceAddress.empty() &&
         destinationAddress.empty()) {
+        std::cerr << "[Network] Failed to extract network fields\n";
+
         return;
     }
 
-    uint32_t processId = 0;
-    uint16_t sourcePort = 0;
-    uint16_t destinationPort = 0;
+    uint32_t processId = parseUInt32(processIdValue);
 
-    try {
-        if (!processIdValue.empty()) {
-            processId = static_cast<uint32_t>(std::stoul(processIdValue));
-        }
+    uint16_t sourcePort = parseUInt16(sourcePortValue);
 
-        if (!sourcePortValue.empty()) {
-            sourcePort = static_cast<uint16_t>(std::stoul(sourcePortValue));
-        }
-
-        if (!destinationPortValue.empty()) {
-            destinationPort =
-                static_cast<uint16_t>(std::stoul(destinationPortValue));
-        }
-    } catch (...) {
-        return;
-    }
+    uint16_t destinationPort = parseUInt16(destinationPortValue);
 
     NetworkConnectionEvidence data;
 

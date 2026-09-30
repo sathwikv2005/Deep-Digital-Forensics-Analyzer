@@ -4,6 +4,7 @@
 #include <winevt.h>
 
 #include <iostream>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -57,6 +58,7 @@ std::wstring renderEvent(EVT_HANDLE event) {
 
 std::wstring extractValue(const std::wstring& xml, const std::wstring& tag) {
     std::wstring openTag = L"<" + tag + L">";
+
     std::wstring closeTag = L"</" + tag + L">";
 
     size_t start = xml.find(openTag);
@@ -146,14 +148,16 @@ std::string extractTimestamp(const std::wstring& xml) {
 std::vector<Evidence> EventLogCollector::collect() {
     evidence_.clear();
 
-    std::cout << "[EventLog] Collecting historical Windows events...\n";
+    std::cout << "[EventLog] Collecting historical "
+                 "Windows events...\n";
 
     collectChannel(L"System");
     collectChannel(L"Application");
     collectChannel(L"Security");
 
-    std::cout << "[EventLog] Collection complete. Events: " << evidence_.size()
-              << '\n';
+    std::cout << "[EventLog] Collection complete. "
+                 "Events: "
+              << evidence_.size() << '\n';
 
     return evidence_;
 }
@@ -185,6 +189,7 @@ void EventLogCollector::collectChannel(const wchar_t* channel) {
 
     while (true) {
         EVT_HANDLE events[16];
+
         DWORD returned = 0;
 
         BOOL result = EvtNext(queryHandle, 16, events, INFINITE, 0, &returned);
@@ -204,6 +209,7 @@ void EventLogCollector::collectChannel(const wchar_t* channel) {
 
         for (DWORD i = 0; i < returned; ++i) {
             handleEvent(events[i]);
+
             EvtClose(events[i]);
         }
     }
@@ -245,17 +251,16 @@ void EventLogCollector::handleEvent(void* eventHandle) {
     EventLogEvidence data;
 
     data.channel = channel;
+
     data.eventId = eventId;
+
     data.provider = provider;
+
     data.computer = computer;
 
     Evidence evidence;
 
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-
-        evidence.id = "eventlog-" + std::to_string(evidence_.size());
-    }
+    evidence.id = "eventlog-" + std::to_string(evidence_.size());
 
     evidence.type = EvidenceType::EventLog;
 
@@ -269,9 +274,5 @@ void EventLogCollector::handleEvent(void* eventHandle) {
 
     evidence.raw = wideToUtf8(xml);
 
-    {
-        std::lock_guard<std::mutex> lock(mutex_);
-
-        evidence_.push_back(std::move(evidence));
-    }
+    evidence_.push_back(std::move(evidence));
 }
