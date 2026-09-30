@@ -4,6 +4,7 @@
 
 #include "crossSourceRiskRule.h"
 #include "riskEngine.h"
+#include "suspiciousProcessRule.h"
 
 #define TIMELINE_PATH "..\\output\\constructor_output\\timeline.json"
 #define CORRELATION_PATH "..\\output\\correlation_output\\correlations.json"
@@ -18,12 +19,15 @@ int main() {
 
         engine.addRule(std::make_unique<CrossSourceRiskRule>());
 
+        engine.addRule(std::make_unique<SuspiciousProcessRule>());
+
         auto findings = engine.analyze();
 
         engine.writeOutput(OUTPUT_PATH, findings);
 
         std::cout << "Risk analysis completed.\n";
         std::cout << "Generated " << findings.size() << " risk findings.\n";
+
         std::cout << "Output: " << OUTPUT_PATH << '\n';
     } catch (const std::exception& e) {
         std::cerr << "Risk engine error: " << e.what() << '\n';
