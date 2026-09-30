@@ -8,7 +8,7 @@
 
 namespace {
 
-constexpr uint64_t THIRTY_DAYS_MS = 30ULL * 24ULL * 60ULL * 60ULL * 1000ULL;
+constexpr uint64_t THIRTY_DAYS_MS = 365ULL * 24ULL * 60ULL * 60ULL * 1000ULL;
 
 constexpr uint64_t MAX_TIME_DELTA = 30ULL * 60ULL * 1000ULL;
 
