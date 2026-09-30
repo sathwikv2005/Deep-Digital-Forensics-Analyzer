@@ -2,9 +2,10 @@
 #include <iostream>
 #include <memory>
 
-#include "crossSourceRiskRule.h"
+#include "executionPathRule.h"
+#include "networkRule.h"
+#include "processRule.h"
 #include "riskEngine.h"
-#include "suspiciousProcessRule.h"
 
 #define TIMELINE_PATH "..\\output\\constructor_output\\timeline.json"
 #define CORRELATION_PATH "..\\output\\correlation_output\\correlations.json"
@@ -17,15 +18,18 @@ int main() {
 
         RiskEngine engine(TIMELINE_PATH, CORRELATION_PATH);
 
-        engine.addRule(std::make_unique<CrossSourceRiskRule>());
+        engine.addRule(std::make_unique<ProcessRule>());
 
-        engine.addRule(std::make_unique<SuspiciousProcessRule>());
+        engine.addRule(std::make_unique<ExecutionPathRule>());
+
+        engine.addRule(std::make_unique<NetworkRule>());
 
         auto findings = engine.analyze();
 
         engine.writeOutput(OUTPUT_PATH, findings);
 
         std::cout << "Risk analysis completed.\n";
+
         std::cout << "Generated " << findings.size() << " risk findings.\n";
 
         std::cout << "Output: " << OUTPUT_PATH << '\n';

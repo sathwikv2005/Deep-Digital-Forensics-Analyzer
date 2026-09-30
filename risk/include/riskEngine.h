@@ -21,5 +21,6 @@ class RiskEngine {
 
    private:
     RiskContext context;
-    std::vector<std::unique_ptr<RiskRule>> rules;
+
+    std::vector<std::unique_ptr<RiskRule> > rules;
 };

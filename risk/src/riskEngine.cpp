@@ -3,6 +3,8 @@
 #include <fstream>
 #include <stdexcept>
 
+#include "riskAggregator.h"
+
 using json = nlohmann::json;
 
 RiskEngine::RiskEngine(const std::string& timelinePath,
@@ -27,16 +29,17 @@ void RiskEngine::addRule(std::unique_ptr<RiskRule> rule) {
 }
 
 std::vector<RiskFinding> RiskEngine::analyze() {
-    std::vector<RiskFinding> findings;
+    std::vector<RiskSignal> signals;
 
     for (const auto& rule : rules) {
-        auto ruleFindings = rule->evaluate(context);
+        auto ruleSignals = rule->evaluate(context);
 
-        findings.insert(findings.end(), ruleFindings.begin(),
-                        ruleFindings.end());
+        signals.insert(signals.end(), ruleSignals.begin(), ruleSignals.end());
     }
 
-    return findings;
+    RiskAggregator aggregator;
+
+    return aggregator.aggregate(context, signals);
 }
 
 void RiskEngine::writeOutput(const std::string& outputPath,
