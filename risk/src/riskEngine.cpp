@@ -22,6 +22,9 @@ RiskEngine::RiskEngine(const std::string& timelinePath,
 
     timelineFile >> context.timeline;
     correlationFile >> context.correlations;
+
+    context.activities =
+        CorrelationAnalyzer::analyze(context.timeline, context.correlations);
 }
 
 void RiskEngine::addRule(std::unique_ptr<RiskRule> rule) {

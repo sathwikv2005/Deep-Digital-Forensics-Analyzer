@@ -4,6 +4,7 @@
 #include <string>
 #include <vector>
 
+#include "correlationAnalyzer.h"
 #include "riskFinding.h"
 #include "riskRule.h"
 

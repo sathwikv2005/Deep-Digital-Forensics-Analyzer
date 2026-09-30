@@ -6,48 +6,33 @@ std::vector<RiskSignal> NetworkRule::evaluate(
     const RiskContext& context) const {
     std::vector<RiskSignal> signals;
 
-    if (!context.correlations.is_array()) return signals;
-
-    for (const auto& correlation : context.correlations) {
-        if (correlation.value("type", "") != "CROSS_SOURCE_ACTIVITY") continue;
-
-        const auto eventIds =
-            correlation.value("eventIds", std::vector<std::string>{});
-
-        const auto sources =
-            correlation.value("sources", std::vector<std::string>{});
-
-        bool hasNetworkSource = false;
-
-        for (const auto& source : sources) {
-            if (source == "Windows Network") {
-                hasNetworkSource = true;
-                break;
-            }
-        }
-
-        if (!hasNetworkSource) continue;
+    for (const auto& activity : context.activities) {
+        if (activity.networkEvents == 0) continue;
 
         RiskSignal signal;
 
-        signal.correlationId = correlation.value("id", "");
+        signal.correlationId = activity.id;
 
         signal.type = "NETWORK_ACTIVITY";
 
-        signal.score = eventIds.size() >= 5 ? 15.0 : 10.0;
+        if (activity.networkEvents >= 10)
+            signal.score = 10.0;
+        else if (activity.networkEvents >= 3)
+            signal.score = 5.0;
+        else
+            signal.score = 2.0;
 
         signal.confidence = 0.6;
 
-        signal.startTime = correlation.value("startTime", 0LL);
+        signal.startTime = activity.startTime;
 
-        signal.endTime = correlation.value("endTime", 0LL);
+        signal.endTime = activity.endTime;
 
-        signal.eventIds = eventIds;
+        signal.eventIds = activity.eventIds;
 
-        signal.indicators =
-            correlation.value("indicators", std::vector<std::string>{});
+        signal.indicators = activity.indicators;
 
-        signal.sources = sources;
+        signal.sources = activity.sources;
 
         signal.reasons.push_back(
             "Process activity is associated with network activity.");
