@@ -8,6 +8,9 @@
 # venv
 .venv
 
+# python
+**/__pycache__/**
+
 # vscode
 .vscode
 
